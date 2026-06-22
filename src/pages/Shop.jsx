@@ -2,83 +2,119 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { useAuth, login } from '../auth';
-import { PRODUCTS, RUNTIMES, productById } from '../data';
+import { useAuth } from '../auth';
 import { postTicketEmbed } from '../lib';
-
-const eur = (n) => `${n.toFixed(2)} €`;
+import {
+  PACKAGES, SERVICES, RUNTIMES, TRACKER, FREEBIES, DISCLAIMERS,
+  pkgById, serviceById, runtimeByKey, fmt,
+} from '../data';
 
 export default function Shop() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [basket, setBasket] = useState([]); // {productId, runtimeIdx}
+  const [basket, setBasket] = useState([]);
   const [consentOpen, setConsentOpen] = useState(false);
 
-  const add = (productId, runtimeIdx = 0) =>
-    setBasket((b) => [...b, { productId, runtimeIdx }]);
+  const hasPremiumPlus = basket.some((b) => b.kind === 'premiumplus');
+
+  const add = (item) => setBasket((b) => [...b, item]);
   const remove = (i) => setBasket((b) => b.filter((_, idx) => idx !== i));
 
-  const lineItems = basket.map((it) => {
-    const p = productById(it.productId);
-    const rt = p.runtimes ? RUNTIMES[it.runtimeIdx] : null;
-    return {
-      productId: p.id,
-      name: p.name,
-      runtimeLabel: rt ? rt.label : null,
-      days: rt ? rt.days : null,
-      price: p.price + (rt ? rt.price : 0),
-      disclaimer: p.disclaimer,
-    };
+  // Expand basket entries into priced line items.
+  const lineItems = basket.flatMap((b) => {
+    if (b.kind === 'package') {
+      const p = pkgById(b.pkgId); const rt = runtimeByKey(b.runtimeKey);
+      const out = [{
+        name: `${p.name} · ${rt.label}`, price: p.prices[b.runtimeKey] || 0, disc: 'analysis',
+      }];
+      if (b.withTracker && p.tracker && !hasPremiumPlus) {
+        out.push({
+          name: `Portfolio Tracker · ${p.name} · ${rt.label}`,
+          price: TRACKER.perPackage * rt.months, disc: 'tracker',
+        });
+      }
+      return out;
+    }
+    if (b.kind === 'premiumplus') {
+      const rt = runtimeByKey(b.runtimeKey);
+      return [{
+        name: `Premium+ · Portfolio Tracker (all packages) · ${rt.label}`,
+        price: TRACKER.premiumPlus * rt.months, disc: 'tracker',
+      }];
+    }
+    const s = serviceById(b.serviceId);
+    return [{
+      name: `${s.name}${s.unit ? ` ${s.unit}` : ''}`, price: s.price,
+      disc: s.id === 'deepdive' ? 'deepdive' : 'coaching',
+    }];
   });
+
   const total = lineItems.reduce((s, x) => s + x.price, 0);
+  const discKeys = [...new Set(lineItems.map((x) => x.disc))];
 
   return (
-    <div className="shell" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 28 }}>
+    <div className="shell" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 28, alignItems: 'start' }}>
       <section>
-        <p className="eyebrow">Katalog</p>
-        <h1 style={{ fontSize: 32, margin: '8px 0 24px' }}>Produkte</h1>
-        <div style={{ display: 'grid', gap: 16 }}>
-          {PRODUCTS.map((p) => (
-            <ProductCard key={p.id} product={p} onAdd={add} />
+        <p className="eyebrow">Catalog</p>
+        <h1 style={{ fontSize: 32, margin: '8px 0 14px' }}>Analysis Packages</h1>
+
+        <div className="card" style={{ padding: '14px 18px', marginBottom: 22, borderColor: 'var(--vsx-gold-2)' }}>
+          <p className="eyebrow" style={{ marginBottom: 8 }}>Included free</p>
+          {FREEBIES.map((f, i) => (
+            <div key={i} style={{ fontSize: 14, color: 'var(--vsx-offwhite)' }}>★ {f}</div>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {PACKAGES.map((p) => (
+            <PackageCard key={p.id} pkg={p} disableTracker={hasPremiumPlus} onAdd={add} />
+          ))}
+        </div>
+
+        <PremiumPlusCard onAdd={add} active={hasPremiumPlus} />
+
+        <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
+        <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {SERVICES.map((s) => (
+            <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <h3 style={{ fontSize: 18 }}>{s.name}</h3>
+                <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>{s.desc}</p>
+              </div>
+              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <div className="mono display" style={{ fontSize: 18, color: 'var(--vsx-gold)' }}>
+                  {fmt(s.price)}<span style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>{s.unit || ''}</span>
+                </div>
+                <button className="btn-ghost" style={{ marginTop: 8 }} onClick={() => add({ kind: 'service', serviceId: s.id })}>Add</button>
+              </div>
+            </div>
           ))}
         </div>
       </section>
 
       <aside>
         <div className="card" style={{ position: 'sticky', top: 24 }}>
-          <p className="eyebrow">Warenkorb</p>
+          <p className="eyebrow">Cart</p>
           {lineItems.length === 0 && (
-            <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 14 }}>
-              Noch leer. Füge Produkte hinzu.
-            </p>
+            <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 14 }}>Empty. Add packages or services.</p>
           )}
           {lineItems.map((it, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 0', borderBottom: '1px solid var(--vsx-line)' }}>
-              <div>
-                <div style={{ fontWeight: 500 }}>{it.name}</div>
-                {it.runtimeLabel && <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>{it.runtimeLabel}</div>}
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="mono">{eur(it.price)}</div>
-                <button onClick={() => remove(i)} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>entfernen</button>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid var(--vsx-line)', gap: 8 }}>
+              <div style={{ fontSize: 13 }}>{it.name}</div>
+              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <div className="mono" style={{ fontSize: 13 }}>{fmt(it.price)}</div>
+                <button onClick={() => remove(i)} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 11, padding: 0 }}>remove</button>
               </div>
             </div>
           ))}
           {lineItems.length > 0 && (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-                <span className="eyebrow">Summe</span>
-                <span className="mono display" style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{eur(total)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
+                <span className="eyebrow">Total</span>
+                <span className="mono display" style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{fmt(total)}</span>
               </div>
-              {user ? (
-                <button className="btn" style={{ width: '100%', marginTop: 18 }} onClick={() => setConsentOpen(true)}>
-                  Ticket öffnen
-                </button>
-              ) : (
-                <button className="btn" style={{ width: '100%', marginTop: 18 }} onClick={login}>
-                  Anmelden zum Bestellen
-                </button>
-              )}
+              <button className="btn" style={{ width: '100%', marginTop: 16 }} onClick={() => setConsentOpen(true)}>Open ticket</button>
             </>
           )}
         </div>
@@ -86,7 +122,7 @@ export default function Shop() {
 
       {consentOpen && (
         <ConsentModal
-          lineItems={lineItems}
+          discKeys={discKeys}
           total={total}
           onClose={() => setConsentOpen(false)}
           onConfirm={async () => {
@@ -94,20 +130,14 @@ export default function Shop() {
               userId: user.uid,
               userTag: user.tag,
               userAvatar: user.avatar,
-              items: lineItems.map(({ disclaimer, ...rest }) => rest),
+              items: lineItems.map(({ disc, ...rest }) => rest),
               total,
-              consent: {
-                accepted: true,
-                at: serverTimestamp(),
-                products: lineItems.map((x) => x.productId),
-              },
+              consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },
               payment: { method: null, status: 'unpaid' },
               status: 'awaiting_payment',
               createdAt: serverTimestamp(),
             });
-            try {
-              await postTicketEmbed({ id: ref.id, userTag: user.tag, items: lineItems, total });
-            } catch (e) { console.error('webhook', e); }
+            try { await postTicketEmbed({ id: ref.id, userTag: user.tag, items: lineItems, total }); } catch (_) {}
             navigate(`/ticket/${ref.id}`);
           }}
         />
@@ -116,54 +146,88 @@ export default function Shop() {
   );
 }
 
-function ProductCard({ product, onAdd }) {
-  const [rt, setRt] = useState(0);
+function PackageCard({ pkg, disableTracker, onAdd }) {
+  const [rtKey, setRtKey] = useState('1M');
+  const [tracker, setTracker] = useState(false);
+  const price = pkg.prices[rtKey];
+  const soon = price == null;
+
   return (
-    <div className="card" style={{ display: 'flex', justifyContent: 'space-between', gap: 18, alignItems: 'center' }}>
-      <div>
-        <h3 style={{ fontSize: 19 }}>{product.name}</h3>
-        <p style={{ color: 'var(--vsx-muted)', fontSize: 14, margin: '6px 0 0', maxWidth: 420 }}>{product.blurb}</p>
-        {product.runtimes && (
-          <select value={rt} onChange={(e) => setRt(+e.target.value)} style={{ width: 'auto', marginTop: 12 }}>
-            {RUNTIMES.map((r, i) => <option key={i} value={i}>{r.label}</option>)}
-          </select>
-        )}
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: pkg.highlight ? 'var(--vsx-gold-2)' : 'var(--vsx-line)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <h3 style={{ fontSize: 19 }}>{pkg.name}</h3>
+        {pkg.highlight && <span className="tag gold">Premium</span>}
       </div>
-      <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-        <div className="mono display" style={{ fontSize: 20, color: 'var(--vsx-gold)' }}>{eur(product.price)}</div>
-        <button className="btn-ghost" style={{ marginTop: 10 }} onClick={() => onAdd(product.id, rt)}>Hinzufügen</button>
+      <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: 0, minHeight: 34 }}>{pkg.desc}</p>
+
+      <select value={rtKey} onChange={(e) => setRtKey(e.target.value)}>
+        {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+      </select>
+
+      <div className="mono display" style={{ fontSize: 22, color: soon ? 'var(--vsx-muted)' : 'var(--vsx-gold)' }}>
+        {soon ? 'Coming soon' : fmt(price)}
+      </div>
+
+      {pkg.tracker && !disableTracker && (
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
+          + Portfolio Tracker ({fmt(TRACKER.perPackage)}/mo)
+        </label>
+      )}
+
+      <button className="btn" disabled={soon}
+        onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>
+        Add
+      </button>
+    </div>
+  );
+}
+
+function PremiumPlusCard({ onAdd, active }) {
+  const [rtKey, setRtKey] = useState('1M');
+  return (
+    <div className="card" style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)' }}>
+      <div>
+        <p className="eyebrow">Add-on</p>
+        <h3 style={{ fontSize: 19, marginTop: 4 }}>Premium+ · Portfolio Tracker</h3>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
+          Portfolio Tracker for all your packages — {fmt(TRACKER.premiumPlus)}/mo.
+        </p>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <select value={rtKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }}>
+          {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+        </select>
+        <button className="btn" disabled={active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: rtKey })}>
+          {active ? 'In cart' : 'Add'}
+        </button>
       </div>
     </div>
   );
 }
 
-function ConsentModal({ lineItems, total, onClose, onConfirm }) {
+function ConsentModal({ discKeys, total, onClose, onConfirm }) {
   const [checked, setChecked] = useState({});
-  const allAccepted = lineItems.every((_, i) => checked[i]);
+  const all = discKeys.every((_, i) => checked[i]);
   return (
     <div style={{ position: 'absolute', inset: 0, minHeight: '100vh', background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', zIndex: 20 }}>
       <div className="card" style={{ maxWidth: 560, width: '100%' }}>
-        <p className="eyebrow">Einverständnis</p>
-        <h2 style={{ fontSize: 24, margin: '8px 0 4px' }}>Disclaimer bestätigen</h2>
+        <p className="eyebrow">Consent</p>
+        <h2 style={{ fontSize: 24, margin: '8px 0 4px' }}>Confirm disclaimers</h2>
         <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 0 }}>
-          Bitte bestätige die produktspezifischen Hinweise, um das Ticket zu öffnen.
+          Please confirm the disclaimers below to open your ticket.
         </p>
         <div style={{ display: 'grid', gap: 14, margin: '18px 0' }}>
-          {lineItems.map((it, i) => (
-            <label key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--vsx-charcoal-3)', padding: 14, borderRadius: 8, cursor: 'pointer' }}>
+          {discKeys.map((k, i) => (
+            <label key={k} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--vsx-charcoal-3)', padding: 14, borderRadius: 8, cursor: 'pointer' }}>
               <input type="checkbox" style={{ width: 18, marginTop: 3 }} checked={!!checked[i]} onChange={(e) => setChecked((c) => ({ ...c, [i]: e.target.checked }))} />
-              <span>
-                <strong>{it.name}</strong>
-                <span style={{ display: 'block', color: 'var(--vsx-muted)', fontSize: 13, marginTop: 4 }}>{it.disclaimer}</span>
-              </span>
+              <span style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>{DISCLAIMERS[k]}</span>
             </label>
           ))}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button className="btn-ghost" onClick={onClose}>Abbrechen</button>
-          <button className="btn" disabled={!allAccepted} onClick={onConfirm}>
-            Ticket öffnen · {total.toFixed(2)} €
-          </button>
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={!all} onClick={onConfirm}>Open ticket · {fmt(total)}</button>
         </div>
       </div>
     </div>

@@ -53,14 +53,14 @@ export function AuthProvider({ children }) {
         const text = await res.text();
         let data = {};
         try { data = JSON.parse(text); } catch (_) {
-          throw new Error('Server-Antwort unlesbar: ' + text.slice(0, 140));
+          throw new Error('Unreadable server response: ' + text.slice(0, 140));
         }
         if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-        if (!data.token) throw new Error('Kein Token erhalten');
+        if (!data.token) throw new Error('No token received');
         await signInWithCustomToken(auth, data.token);
         setAuthError(null);
       } catch (e) {
-        setAuthError(e.message || 'Login fehlgeschlagen');
+        setAuthError(e.message || 'Login failed');
         console.error('Login-Fehler:', e);
       } finally {
         window.history.replaceState({}, '', window.location.pathname);

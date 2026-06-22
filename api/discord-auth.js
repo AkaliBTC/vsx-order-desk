@@ -10,7 +10,7 @@ function getAdmin() {
     try {
       creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     } catch (e) {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT ist kein gültiges JSON');
+      throw new Error('FIREBASE_SERVICE_ACCOUNT is not valid JSON');
     }
     admin.initializeApp({ credential: admin.credential.cert(creds) });
   }
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     });
     if (!tokenRes.ok) {
       const t = await tokenRes.text();
-      throw new Error('Discord Token-Tausch fehlgeschlagen: ' + t.slice(0, 120));
+      throw new Error('Discord token exchange failed: ' + t.slice(0, 120));
     }
     const { access_token } = await tokenRes.json();
 

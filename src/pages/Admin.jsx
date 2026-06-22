@@ -5,7 +5,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../auth';
 import { postTranscript, checkTronPayment } from '../lib';
-import { PAYMENT } from '../data';
+import { PAYMENT, fmt } from '../data';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -22,9 +22,9 @@ export default function Admin() {
   return (
     <div className="shell" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
       <aside className="card" style={{ position: 'sticky', top: 24 }}>
-        <p className="eyebrow">Offene Tickets</p>
+        <p className="eyebrow">Open tickets</p>
         <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-          {tickets.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>Keine offenen Tickets.</p>}
+          {tickets.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No open tickets.</p>}
           {tickets.map((t) => (
             <button key={t.id} onClick={() => setSelected(t.id)} style={{
               textAlign: 'left', background: selected === t.id ? 'var(--vsx-charcoal-3)' : 'transparent',
@@ -32,10 +32,10 @@ export default function Admin() {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span className="mono" style={{ fontSize: 12 }}>#{t.id.slice(0, 6)}</span>
-                <span className={`tag ${t.status === 'paid' ? 'ok' : 'warn'}`}>{t.status === 'paid' ? 'bezahlt' : 'offen'}</span>
+                <span className={`tag ${t.status === 'paid' ? 'ok' : 'warn'}`}>{t.status === 'paid' ? 'paid' : 'open'}</span>
               </div>
               <div style={{ fontSize: 13, marginTop: 4 }}>{t.userTag}</div>
-              <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-gold)' }}>{t.total?.toFixed(2)} €</div>
+              <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-gold)' }}>{fmt(t.total)}</div>
             </button>
           ))}
         </div>
@@ -43,7 +43,7 @@ export default function Admin() {
 
       <main>
         {!active ? (
-          <div className="card"><p style={{ color: 'var(--vsx-muted)' }}>Ticket links auswählen.</p></div>
+          <div className="card"><p style={{ color: 'var(--vsx-muted)' }}>Select a ticket on the left.</p></div>
         ) : (
           <AdminDetail ticket={active} modTag={user.tag} />
         )}
@@ -54,6 +54,7 @@ export default function Admin() {
 
 function AdminDetail({ ticket, modTag }) {
   const p = ticket.payment || {};
+  const [checking, setChecking] = useState(false);
 
   const confirmPayment = () =>
     updateDoc(doc(db, 'tickets', ticket.id), {
@@ -64,24 +65,21 @@ function AdminDetail({ ticket, modTag }) {
     });
 
   const closeTicket = async () => {
-    if (!confirm('Ticket schließen? Transcript geht ins Archiv, danach wird das Ticket gelöscht.')) return;
+    if (!confirm('Close ticket? A transcript is sent to the archive, then the ticket is deleted.')) return;
     const msgsRef = collection(db, 'tickets', ticket.id, 'messages');
-    let messages = [];
     try {
       const snap = await getDocs(msgsRef);
-      messages = snap.docs.map((d) => d.data())
+      const messages = snap.docs.map((d) => d.data())
         .sort((a, b) => (a.at?.seconds || 0) - (b.at?.seconds || 0));
       await postTranscript({ ...ticket, status: 'closed' }, messages);
-      // Aufräumen: erst Nachrichten, dann das Ticket selbst löschen → forget.
       const snap2 = await getDocs(msgsRef);
       await Promise.all(snap2.docs.map((d) => deleteDoc(d.ref)));
       await deleteDoc(doc(db, 'tickets', ticket.id));
     } catch (e) {
-      alert('Schließen fehlgeschlagen: ' + e.message);
+      alert('Closing failed: ' + e.message);
     }
   };
 
-  const [checking, setChecking] = useState(false);
   const checkChain = async () => {
     setChecking(true);
     try {
@@ -92,9 +90,9 @@ function AdminDetail({ ticket, modTag }) {
           'payment.confirmedBy': 'auto:tron', 'payment.confirmedAt': serverTimestamp(),
         });
       } else {
-        alert('Noch kein passender USDT-Eingang gefunden.');
+        alert('No matching USDT payment found yet.');
       }
-    } catch (e) { alert('Prüfung fehlgeschlagen: ' + e.message); }
+    } catch (e) { alert('Check failed: ' + e.message); }
     setChecking(false);
   };
 
@@ -103,31 +101,31 @@ function AdminDetail({ ticket, modTag }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <p className="eyebrow">Ticket #{ticket.id.slice(0, 6)} · {ticket.userTag}</p>
-          <h2 style={{ fontSize: 22 }}>{ticket.total?.toFixed(2)} €</h2>
+          <h2 style={{ fontSize: 22 }}>{fmt(ticket.total)}</h2>
         </div>
         <span className={`tag ${ticket.status === 'paid' ? 'ok' : 'warn'}`}>{ticket.status}</span>
       </div>
 
       <div>
-        <p className="eyebrow">Positionen</p>
+        <p className="eyebrow">Items</p>
         {ticket.items.map((it, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--vsx-line)' }}>
-            <span>{it.name}{it.runtimeLabel ? ` · ${it.runtimeLabel}` : ''}</span>
-            <span className="mono">{it.price.toFixed(2)} €</span>
+            <span>{it.name}</span>
+            <span className="mono">{fmt(it.price)}</span>
           </div>
         ))}
       </div>
 
       <div>
-        <p className="eyebrow">Zahlung</p>
+        <p className="eyebrow">Payment</p>
         <div className="mono" style={{ fontSize: 13, color: 'var(--vsx-muted)' }}>
-          Methode: {p.method || '—'} · Status: {p.status || '—'}
-          {p.method === 'trc20' && p.expectedAmount ? ` · erwartet: ${p.expectedAmount} USDT` : ''}
+          Method: {p.method || '—'} · Status: {p.status || '—'}
+          {p.method === 'trc20' && p.expectedAmount ? ` · expected: ${p.expectedAmount} USDT` : ''}
           {p.txHash ? ` · tx: ${p.txHash.slice(0, 10)}…` : ''}
         </div>
         {p.proofSent && (
           <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-muted)', marginTop: 8 }}>
-            Beweis-Screenshot wurde in #tickets gepostet.
+            Proof screenshot was posted to #tickets.
           </div>
         )}
       </div>
@@ -135,17 +133,17 @@ function AdminDetail({ ticket, modTag }) {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {p.method === 'trc20' && ticket.status !== 'paid' && (
           <button className="btn-ghost" onClick={checkChain} disabled={checking}>
-            {checking ? 'Prüfe…' : 'On-Chain prüfen'}
+            {checking ? 'Checking…' : 'Check on-chain'}
           </button>
         )}
         {ticket.status !== 'paid' && (
-          <button className="btn-ghost" onClick={confirmPayment}>Zahlung bestätigen</button>
+          <button className="btn-ghost" onClick={confirmPayment}>Confirm payment</button>
         )}
-        <button className="btn" onClick={closeTicket}>Ticket schließen &amp; archivieren</button>
+        <button className="btn" onClick={closeTicket}>Close &amp; archive ticket</button>
       </div>
 
       <p className="mono" style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>
-        Zum Chatten: <a href={`/ticket/${ticket.id}`}>Ticket-Ansicht öffnen ↗</a>
+        To chat: <a href={`/ticket/${ticket.id}`}>open ticket view ↗</a>
       </p>
     </div>
   );

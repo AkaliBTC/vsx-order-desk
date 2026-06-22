@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   doc, onSnapshot, updateDoc, collection, addDoc, query, orderBy, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../auth';
-import { PAYMENT } from '../data';
+import { PAYMENT, fmt } from '../data';
 import { postProofImage } from '../lib';
 
 export default function Ticket() {
@@ -15,8 +15,8 @@ export default function Ticket() {
 
   useEffect(() => onSnapshot(doc(db, 'tickets', id), (s) => setTicket(s.exists() ? { id: s.id, ...s.data() } : null)), [id]);
 
-  if (ticket === undefined) return <div className="shell" style={{ paddingTop: 40 }}>Lädt…</div>;
-  if (ticket === null) return <div className="shell" style={{ paddingTop: 40 }}>Ticket nicht gefunden.</div>;
+  if (ticket === undefined) return <div className="shell" style={{ paddingTop: 40 }}>Loading…</div>;
+  if (ticket === null) return <div className="shell" style={{ paddingTop: 40 }}>Ticket not found.</div>;
 
   return (
     <div className="shell" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 28, alignItems: 'start' }}>
@@ -31,9 +31,9 @@ export default function Ticket() {
 
 function StatusTag({ status }) {
   const map = {
-    awaiting_payment: ['warn', 'Zahlung offen'],
-    paid: ['ok', 'Bezahlt'],
-    closed: ['gold', 'Geschlossen'],
+    awaiting_payment: ['warn', 'Awaiting payment'],
+    paid: ['ok', 'Paid'],
+    closed: ['gold', 'Closed'],
   };
   const [cls, label] = map[status] || ['', status];
   return <span className={`tag ${cls}`}>{label}</span>;
@@ -49,13 +49,13 @@ function Summary({ ticket }) {
       <div style={{ marginTop: 14 }}>
         {ticket.items.map((it, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--vsx-line)' }}>
-            <span>{it.name}{it.runtimeLabel ? <span className="mono" style={{ color: 'var(--vsx-muted)' }}> · {it.runtimeLabel}</span> : null}</span>
-            <span className="mono">{it.price.toFixed(2)} €</span>
+            <span>{it.name}</span>
+            <span className="mono">{fmt(it.price)}</span>
           </div>
         ))}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
-          <span className="eyebrow">Summe</span>
-          <span className="mono display" style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{ticket.total.toFixed(2)} €</span>
+          <span className="eyebrow">Total</span>
+          <span className="mono display" style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{fmt(ticket.total)}</span>
         </div>
       </div>
     </div>
@@ -69,7 +69,6 @@ function Payment({ ticket }) {
   const choose = async (method) => {
     const patch = { 'payment.method': method, 'payment.status': 'awaiting' };
     if (method === 'trc20') {
-      // Unique sub-cent amount so the verifier can match the on-chain transfer.
       const unique = Math.floor(1 + Math.random() * 999) / 1000;
       patch['payment.expectedAmount'] = +(ticket.total + unique).toFixed(3);
       patch['payment.address'] = PAYMENT.tronAddress;
@@ -78,13 +77,13 @@ function Payment({ ticket }) {
   };
 
   if (paid) {
-    return <div className="card"><p className="eyebrow">Zahlung</p><p style={{ color: 'var(--vsx-ok)', marginTop: 10 }}>Zahlung bestätigt. Danke!</p></div>;
+    return <div className="card"><p className="eyebrow">Payment</p><p style={{ color: 'var(--vsx-ok)', marginTop: 10 }}>Payment confirmed. Thank you!</p></div>;
   }
 
   if (!p.method) {
     return (
       <div className="card">
-        <p className="eyebrow">Zahlung wählen</p>
+        <p className="eyebrow">Choose payment</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 14 }}>
           <button className="btn-ghost" style={{ flex: 1 }} onClick={() => choose('paypal')}>PayPal</button>
           <button className="btn-ghost" style={{ flex: 1 }} onClick={() => choose('trc20')}>USDT · TRC20</button>
@@ -116,7 +115,6 @@ function PaymentInstructions({ ticket }) {
     const file = fileRef.current?.files?.[0];
     if (file) {
       setUploading(true);
-      // Screenshot direkt nach Discord (#tickets) — nichts wird bei uns gespeichert.
       try {
         await postProofImage({ id: ticket.id, userTag: ticket.userTag, total: ticket.total }, file);
       } catch (e) { console.error('proof', e); }
@@ -126,7 +124,6 @@ function PaymentInstructions({ ticket }) {
       'payment.proofSent': !!file,
       'payment.markedPaidAt': serverTimestamp(),
     });
-    // PayPal: Mod bestätigt im Panel. TRC20: Mod prüft per "On-Chain prüfen".
   };
 
   return (
@@ -134,35 +131,35 @@ function PaymentInstructions({ ticket }) {
       <p className="eyebrow">{isTron ? 'USDT · TRC20' : 'PayPal'}</p>
       <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 8 }}>
         {isTron
-          ? 'Sende exakt den angezeigten Betrag (inkl. Nachkommastellen) an die Adresse. Der Betrag dient der eindeutigen Zuordnung.'
-          : 'Sende den Betrag an folgendes PayPal-Konto und hänge einen Beweis-Screenshot an.'}
+          ? 'Send the exact amount shown (including decimals) to the address. The amount is used to match your payment.'
+          : 'Send the amount to the PayPal account below and attach a proof screenshot.'}
       </p>
 
       <div style={{ background: 'var(--vsx-charcoal-3)', borderRadius: 8, padding: 14, marginTop: 14 }}>
-        <div className="eyebrow">Betrag</div>
+        <div className="eyebrow">Amount</div>
         <div className="mono display" style={{ fontSize: 22, color: 'var(--vsx-gold)' }}>
-          {amount.toFixed(isTron ? 3 : 2)} {isTron ? 'USDT' : '€'}
+          {isTron ? `${amount.toFixed(3)} USDT` : fmt(amount)}
         </div>
-        <div className="eyebrow" style={{ marginTop: 12 }}>{isTron ? 'Adresse (TRC20)' : 'PayPal'}</div>
+        <div className="eyebrow" style={{ marginTop: 12 }}>{isTron ? 'Address (TRC20)' : 'PayPal'}</div>
         <div className="mono" style={{ wordBreak: 'break-all', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
           <span>{address}</span>
-          <button onClick={() => navigator.clipboard.writeText(address)} style={{ background: 'none', color: 'var(--vsx-gold)', padding: 0 }}>Kopieren</button>
+          <button onClick={() => navigator.clipboard.writeText(address)} style={{ background: 'none', color: 'var(--vsx-gold)', padding: 0 }}>Copy</button>
         </div>
       </div>
 
       {!isTron && (
         <div style={{ marginTop: 14 }}>
-          <label className="eyebrow">Beweis-Screenshot</label>
+          <label className="eyebrow">Proof screenshot</label>
           <input ref={fileRef} type="file" accept="image/*" style={{ marginTop: 6 }} />
         </div>
       )}
 
       <button className="btn" style={{ width: '100%', marginTop: 16 }} disabled={cooldown > 0 || uploading} onClick={markPaid}>
-        {cooldown > 0 ? `Paid (in ${cooldown}s)` : uploading ? 'Lädt…' : 'Paid'}
+        {cooldown > 0 ? `Paid (in ${cooldown}s)` : uploading ? 'Sending…' : 'Paid'}
       </button>
       {isTron && (
         <p style={{ color: 'var(--vsx-muted)', fontSize: 12, marginTop: 10 }}>
-          Dein Eingang wird geprüft und das Ticket danach auf „Bezahlt" gesetzt.
+          Your payment will be verified and the ticket marked “Paid”.
         </p>
       )}
     </div>
@@ -195,7 +192,7 @@ function Chat({ ticket, user }) {
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 560, position: 'sticky', top: 24 }}>
-      <p className="eyebrow">Ticket-Chat</p>
+      <p className="eyebrow">Ticket chat</p>
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, margin: '12px 0' }}>
         {messages.map((m) => (
           <div key={m.id} style={{ alignSelf: m.from === 'customer' ? 'flex-start' : 'flex-end', maxWidth: '85%' }}>
@@ -212,8 +209,8 @@ function Chat({ ticket, user }) {
       </div>
       {ticket.status !== 'closed' && (
         <div style={{ display: 'flex', gap: 8 }}>
-          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="Nachricht…" />
-          <button className="btn" onClick={send}>Senden</button>
+          <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="Message…" />
+          <button className="btn" onClick={send}>Send</button>
         </div>
       )}
     </div>

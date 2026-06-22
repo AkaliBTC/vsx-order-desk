@@ -24,10 +24,10 @@ function Header() {
                 style={{ borderRadius: '50%', border: '1px solid var(--vsx-line)' }} />
             )}
             <span className="mono" style={{ fontSize: 13 }}>{user.tag}</span>
-            <button className="btn-ghost" onClick={logout}>Abmelden</button>
+            <button className="btn-ghost" onClick={logout}>Logout</button>
           </>
         ) : (
-          <button className="btn" onClick={login}>Mit Discord anmelden</button>
+          <button className="btn" onClick={login}>Sign in with Discord</button>
         )}
       </nav>
     </header>
@@ -43,7 +43,7 @@ function ErrorBanner() {
         background: 'rgba(192,83,63,.12)', border: '1px solid #5b2e26',
         borderRadius: 10, padding: '12px 16px', color: '#e7a08f', fontSize: 14,
       }}>
-        <b>Login-Fehler:</b> <span className="mono">{authError}</span>
+        <b>Login error:</b> <span className="mono">{authError}</span>
       </div>
     </div>
   );
@@ -51,15 +51,15 @@ function ErrorBanner() {
 
 function Gate({ children, mod }) {
   const { user, ready } = useAuth();
-  if (!ready) return <div className="shell" style={{ paddingTop: 60 }}>Lädt…</div>;
+  if (!ready) return <div className="shell" style={{ paddingTop: 60 }}>Loading…</div>;
   if (!user) return (
     <div className="shell" style={{ paddingTop: 80, textAlign: 'center' }}>
-      <p className="eyebrow">Zugang</p>
-      <h1 style={{ fontSize: 34, margin: '12px 0 10px' }}>Willkommen bei VisionX</h1>
+      <p className="eyebrow">Access</p>
+      <h1 style={{ fontSize: 34, margin: '12px 0 10px' }}>Welcome to VisionX</h1>
       <p style={{ color: 'var(--vsx-muted)', marginBottom: 24 }}>
-        Bitte melde dich mit Discord an, um die Analysepakete zu sehen.
+        Please sign in with Discord to view the analysis packages.
       </p>
-      <button className="btn" onClick={login}>Mit Discord anmelden</button>
+      <button className="btn" onClick={login}>Sign in with Discord</button>
     </div>
   );
   if (mod && !user.isMod) return <Navigate to="/" replace />;
