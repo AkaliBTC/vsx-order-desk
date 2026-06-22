@@ -147,6 +147,7 @@ function CatalogueEditor() {
   const live = useCatalogue();
   const [form, setForm] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState('');
 
   useEffect(() => { if (!form) setForm(JSON.parse(JSON.stringify(live))); }, [live, form]);
   if (!form) return <div className="card">Loading…</div>;
@@ -166,8 +167,13 @@ function CatalogueEditor() {
   });
 
   const save = async () => {
-    await setDoc(doc(db, 'config', 'catalogue'), form);
-    setSaved(true); setTimeout(() => setSaved(false), 2500);
+    setSaveErr('');
+    try {
+      await setDoc(doc(db, 'config', 'catalogue'), form);
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setSaveErr(e.message || 'Save failed (check Firestore rules).');
+    }
   };
 
   const inp = { marginTop: 4 };
@@ -185,6 +191,11 @@ function CatalogueEditor() {
           <button className="btn" onClick={save}>Save changes</button>
         </div>
       </div>
+      {saveErr && (
+        <div style={{ background: 'rgba(192,83,63,.12)', border: '1px solid #5b2e26', borderRadius: 10, padding: '10px 14px', color: '#e7a08f', fontSize: 13 }}>
+          <b>Save failed:</b> <span className="mono">{saveErr}</span>
+        </div>
+      )}
 
       <p className="eyebrow">Packages</p>
       {form.packages.map((p, i) => (
