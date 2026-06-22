@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  collection, query, orderBy, onSnapshot, doc, updateDoc, setDoc,
+  collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, setDoc,
   getDocs, deleteDoc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
-import { useCatalogue } from '../catalogue';
 import { postTranscript, checkTronPayment } from '../lib';
-import { PAYMENT, RUNTIMES, fmt } from '../data';
+import { PAYMENT, RUNTIMES, fmt, DEFAULT_CATALOGUE } from '../data';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -162,12 +161,27 @@ function AdminDetail({ ticket, modTag }) {
 
 /* --------------------------- Catalogue editor ------------------------- */
 function CatalogueEditor() {
-  const live = useCatalogue();
   const [form, setForm] = useState(null);
   const [saved, setSaved] = useState(false);
   const [saveErr, setSaveErr] = useState('');
+  const [loadErr, setLoadErr] = useState('');
 
-  useEffect(() => { if (!form) setForm(JSON.parse(JSON.stringify(live))); }, [live, form]);
+  // Read the SAVED catalogue once. Important: never seed the form from the
+  // in-memory default before the real document has loaded, otherwise saving
+  // would overwrite your stored prices/role IDs with blanks.
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'config', 'catalogue'));
+        const data = snap.exists() ? snap.data() : {};
+        setForm({ ...JSON.parse(JSON.stringify(DEFAULT_CATALOGUE)), ...data });
+      } catch (e) {
+        setLoadErr(e.message || 'Could not load catalogue');
+      }
+    })();
+  }, []);
+
+  if (loadErr) return <div className="card" style={{ color: 'var(--vsx-err)' }}>Load failed: {loadErr}</div>;
   if (!form) return <div className="card">Loading…</div>;
 
   const setPkg = (i, key, val) => setForm((f) => {
