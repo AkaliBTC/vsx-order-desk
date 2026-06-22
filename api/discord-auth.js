@@ -3,16 +3,24 @@
 // Firebase Custom Token zurück, inkl. mod-Claim aus dem Rollen-Check.
 import admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)),
-  });
+// Lazy-Init, damit ein fehlerhafter Service-Account eine lesbare Fehlermeldung gibt.
+function getAdmin() {
+  if (!admin.apps.length) {
+    let creds;
+    try {
+      creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT ist kein gültiges JSON');
+    }
+    admin.initializeApp({ credential: admin.credential.cert(creds) });
+  }
+  return admin;
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
   try {
-    const { code, redirectUri } = req.body;
+    const { code, redirectUri } = req.body || {};
     if (!code) return res.status(400).json({ error: 'missing code' });
 
     // 1) Code -> Access Token (Client Secret bleibt hier auf dem Server)
@@ -27,7 +35,10 @@ export default async function handler(req, res) {
         client_secret: process.env.DISCORD_CLIENT_SECRET,
       }),
     });
-    if (!tokenRes.ok) throw new Error('token exchange failed');
+    if (!tokenRes.ok) {
+      const t = await tokenRes.text();
+      throw new Error('Discord Token-Tausch fehlgeschlagen: ' + t.slice(0, 120));
+    }
     const { access_token } = await tokenRes.json();
 
     // 2) Profil
@@ -47,7 +58,8 @@ export default async function handler(req, res) {
 
     const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '')
       .split(',').map((s) => s.trim()).filter(Boolean);
-    const token = await admin.auth().createCustomToken(me.id, {
+
+    const token = await getAdmin().auth().createCustomToken(me.id, {
       mod: roles.some((r) => modRoles.includes(r)),
       tag: me.global_name || me.username,
       avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png` : null,
@@ -55,6 +67,6 @@ export default async function handler(req, res) {
     res.json({ token });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'auth failed' });
+    res.status(500).json({ error: e.message || 'auth failed' });
   }
 }
