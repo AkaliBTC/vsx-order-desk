@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   collection, query, orderBy, onSnapshot, doc, updateDoc, setDoc,
-  getDocs, deleteDoc, serverTimestamp,
+  getDocs, deleteDoc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../auth';
@@ -17,8 +17,11 @@ export default function Admin() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <button className={view === 'tickets' ? 'btn' : 'btn-ghost'} onClick={() => setView('tickets')}>Tickets</button>
         <button className={view === 'catalogue' ? 'btn' : 'btn-ghost'} onClick={() => setView('catalogue')}>Catalogue</button>
+        <button className={view === 'discounts' ? 'btn' : 'btn-ghost'} onClick={() => setView('discounts')}>Discounts</button>
       </div>
-      {view === 'tickets' ? <Tickets user={user} /> : <CatalogueEditor />}
+      {view === 'tickets' && <Tickets user={user} />}
+      {view === 'catalogue' && <CatalogueEditor />}
+      {view === 'discounts' && <DiscountsEditor />}
     </div>
   );
 }
@@ -219,6 +222,13 @@ function CatalogueEditor() {
             onChange={(e) => setForm((f) => ({ ...f, tracker: { ...f.tracker, premiumPlus: Number(e.target.value) } }))} /></div>
       </div>
 
+      <p className="eyebrow" style={{ marginTop: 10 }}>Loyalty</p>
+      <div className="card">
+        <label style={lbl}>Loyalty Discord role ID (10% off analysis packages)</label>
+        <input style={inp} value={form.loyaltyRoleId || ''} placeholder="leave empty to disable"
+          onChange={(e) => setForm((f) => ({ ...f, loyaltyRoleId: e.target.value }))} />
+      </div>
+
       <p className="eyebrow" style={{ marginTop: 10 }}>Services</p>
       {form.services.map((s, i) => (
         <div key={s.id} className="card" style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr', gap: 10, alignItems: 'end' }}>
@@ -238,6 +248,77 @@ function CatalogueEditor() {
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         {saved && <span className="tag ok">Saved</span>}
         <button className="btn" onClick={save}>Save changes</button>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- Discounts editor ------------------------- */
+function DiscountsEditor() {
+  const [codes, setCodes] = useState([]);
+  const [code, setCode] = useState('');
+  const [percent, setPercent] = useState(10);
+  const [expiry, setExpiry] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => onSnapshot(collection(db, 'discounts'),
+    (s) => setCodes(s.docs.map((d) => ({ id: d.id, ...d.data() })))), []);
+
+  const addCode = async () => {
+    const id = code.trim().toUpperCase();
+    setErr('');
+    if (!id) { setErr('Enter a code.'); return; }
+    if (!(percent > 0 && percent <= 100)) { setErr('Percent must be 1–100.'); return; }
+    try {
+      await setDoc(doc(db, 'discounts', id), {
+        percent: Number(percent),
+        expiresAt: expiry ? Timestamp.fromDate(new Date(expiry + 'T23:59:59')) : null,
+        active: true,
+        createdAt: serverTimestamp(),
+      });
+      setCode(''); setPercent(10); setExpiry('');
+    } catch (e) { setErr(e.message); }
+  };
+
+  const inp = { marginTop: 4 };
+  const lbl = { fontSize: 11, color: 'var(--vsx-muted)', display: 'block' };
+
+  return (
+    <div style={{ display: 'grid', gap: 18, maxWidth: 720 }}>
+      <div>
+        <p className="eyebrow">Discounts</p>
+        <h2 style={{ fontSize: 24 }}>Discount codes</h2>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>
+          Codes apply a percentage off the whole cart at checkout. Leave the date empty for no expiry.
+        </p>
+      </div>
+
+      <div className="card" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr auto', gap: 12, alignItems: 'end' }}>
+        <div><label style={lbl}>Code</label><input style={{ ...inp, textTransform: 'uppercase' }} value={code} onChange={(e) => setCode(e.target.value)} placeholder="WELCOME10" /></div>
+        <div><label style={lbl}>Percent (%)</label><input style={inp} type="number" value={percent} onChange={(e) => setPercent(e.target.value)} /></div>
+        <div><label style={lbl}>Expires (optional)</label><input style={inp} type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
+        <button className="btn" onClick={addCode}>Add</button>
+      </div>
+      {err && <p style={{ color: 'var(--vsx-err)', fontSize: 13 }}>{err}</p>}
+
+      <div className="card">
+        <p className="eyebrow" style={{ marginBottom: 10 }}>Active codes</p>
+        {codes.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No codes yet.</p>}
+        {codes.map((c) => {
+          const exp = c.expiresAt ? new Date(c.expiresAt.toMillis()) : null;
+          const expired = exp && exp.getTime() < Date.now();
+          return (
+            <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
+              <div>
+                <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{c.id}</span>
+                <span className="mono" style={{ color: 'var(--vsx-muted)', fontSize: 12, marginLeft: 10 }}>
+                  −{c.percent}% · {exp ? `until ${exp.toLocaleDateString()}` : 'no expiry'}{expired ? ' · EXPIRED' : ''}
+                </span>
+              </div>
+              <button onClick={() => deleteDoc(doc(db, 'discounts', c.id))} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>delete</button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

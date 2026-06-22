@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../auth';
 import { useCatalogue } from '../catalogue';
@@ -13,6 +13,24 @@ export default function Shop() {
   const cat = useCatalogue();
   const [basket, setBasket] = useState([]);
   const [consentOpen, setConsentOpen] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [applied, setApplied] = useState(null);   // { code, percent }
+  const [codeError, setCodeError] = useState('');
+
+  const applyCode = async () => {
+    const code = codeInput.trim().toUpperCase();
+    setCodeError('');
+    if (!code) return;
+    try {
+      const snap = await getDoc(doc(db, 'discounts', code));
+      if (!snap.exists()) { setCodeError('Code not found.'); return; }
+      const d = snap.data();
+      if (d.active === false) { setCodeError('Code is inactive.'); return; }
+      if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) { setCodeError('Code expired.'); return; }
+      setApplied({ code, percent: Number(d.percent) });
+      setCodeError('');
+    } catch (e) { setCodeError('Could not validate code.'); }
+  };
 
   const owns = user.owns || [];
   const pkgById = (id) => cat.packages.find((p) => p.id === id);
@@ -53,8 +71,19 @@ export default function Shop() {
     return [{ name: `${s.name}${s.unit ? ` ${s.unit}` : ''}`, price: Number(s.price) || 0, disc: s.id === 'deepdive' ? 'deepdive' : 'coaching' }];
   });
 
-  const total = lineItems.reduce((s, x) => s + x.price, 0);
+  const total0 = lineItems.reduce((s, x) => s + x.price, 0);
+  const analysisSubtotal = lineItems.filter((x) => x.disc === 'analysis').reduce((s, x) => s + x.price, 0);
+  const loyaltyOff = user.loyalty ? Math.round(analysisSubtotal * 10) / 100 : 0; // 10% on analysis only
+  const afterLoyalty = total0 - loyaltyOff;
+  const codeOff = applied ? Math.round(afterLoyalty * applied.percent) / 100 : 0;
+  const total = +(afterLoyalty - codeOff).toFixed(2);
   const discKeys = [...new Set(lineItems.map((x) => x.disc))];
+
+  // Discount lines appended to the order (so the ticket + transcript show them).
+  const discountLines = [
+    ...(loyaltyOff > 0 ? [{ name: 'Loyalty −10% (analysis)', price: -loyaltyOff }] : []),
+    ...(codeOff > 0 ? [{ name: `Code ${applied.code} −${applied.percent}%`, price: -codeOff }] : []),
+  ];
 
   // Packages the user can add a standalone tracker for (owns role, not buying now).
   const ownedTrackable = hasPremiumPlus ? [] : cat.packages.filter(
@@ -132,6 +161,29 @@ export default function Shop() {
           ))}
           {lineItems.length > 0 && (
             <>
+              {discountLines.map((d, i) => (
+                <div key={`d${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 13, color: 'var(--vsx-ok)' }}>
+                  <span>{d.name}</span><span className="mono">{fmt(d.price)}</span>
+                </div>
+              ))}
+
+              <div style={{ marginTop: 12 }}>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>Discount code</p>
+                {applied ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                    <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{applied.code} (−{applied.percent}%)</span>
+                    <button onClick={() => { setApplied(null); setCodeInput(''); }} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>remove</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="CODE"
+                      onKeyDown={(e) => e.key === 'Enter' && applyCode()} style={{ textTransform: 'uppercase' }} />
+                    <button className="btn-ghost" onClick={applyCode}>Apply</button>
+                  </div>
+                )}
+                {codeError && <p style={{ color: 'var(--vsx-err)', fontSize: 12, marginTop: 6 }}>{codeError}</p>}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
                 <span className="eyebrow">Total</span>
                 <span className="mono display" style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{fmt(total)}</span>
@@ -145,14 +197,17 @@ export default function Shop() {
       {consentOpen && (
         <ConsentModal discKeys={discKeys} total={total} onClose={() => setConsentOpen(false)}
           onConfirm={async () => {
+            const items = [...lineItems.map(({ disc, ...rest }) => rest), ...discountLines];
             const ref = await addDoc(collection(db, 'tickets'), {
               userId: user.uid, userTag: user.tag, userAvatar: user.avatar,
-              items: lineItems.map(({ disc, ...rest }) => rest), total,
+              items, total,
+              discount: applied ? { code: applied.code, percent: applied.percent } : null,
+              loyalty: loyaltyOff > 0,
               consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },
               payment: { method: null, status: 'unpaid' },
               status: 'awaiting_payment', createdAt: serverTimestamp(),
             });
-            try { await postTicketEmbed({ id: ref.id, userTag: user.tag, items: lineItems, total }); } catch (_) {}
+            try { await postTicketEmbed({ id: ref.id, userTag: user.tag, items, total }); } catch (_) {}
             navigate(`/ticket/${ref.id}`);
           }} />
       )}

@@ -11,7 +11,8 @@ function Header() {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '22px 24px', maxWidth: 1080, margin: '0 auto',
     }}>
-      <Link to="/" style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <img src="/logo.png" alt="VisionX" height={34} style={{ display: 'block' }} />
         <span className="display" style={{ fontSize: 26, color: 'var(--vsx-gold)' }}>VISIONX</span>
         <span className="eyebrow">Order Desk</span>
       </Link>
@@ -54,6 +55,7 @@ function Gate({ children, mod }) {
   if (!ready) return <div className="shell" style={{ paddingTop: 60 }}>Loading…</div>;
   if (!user) return (
     <div className="shell" style={{ paddingTop: 80, textAlign: 'center' }}>
+      <img src="/logo.png" alt="VisionX" height={90} style={{ marginBottom: 18 }} />
       <p className="eyebrow">Access</p>
       <h1 style={{ fontSize: 34, margin: '12px 0 10px' }}>Welcome to VisionX</h1>
       <p style={{ color: 'var(--vsx-muted)', marginBottom: 24 }}>

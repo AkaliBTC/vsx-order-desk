@@ -3,7 +3,11 @@
 // until an admin saves the catalogue the first time.
 
 export const CURRENCY = '$';
-export const fmt = (n) => (n == null || n === '' ? '—' : `$${Number(n).toFixed(2)}`);
+export const fmt = (n) => {
+  if (n == null || n === '') return '—';
+  const v = Number(n);
+  return (v < 0 ? '−$' : '$') + Math.abs(v).toFixed(2);
+};
 
 export const PAYMENT = {
   paypalHandle: '@serenityibb',
@@ -66,4 +70,5 @@ export const DEFAULT_CATALOGUE = {
     'Educational content — Crypto, Stocks & Premium',
   ],
   tracker: { perPackage: 10, premiumPlus: 35 },
+  loyaltyRoleId: '',
 };

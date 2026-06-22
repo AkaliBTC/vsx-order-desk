@@ -62,10 +62,13 @@ export default async function handler(req, res) {
     // Which packages does this customer already own? Match Discord roles
     // against each package's roleId in the live catalogue (config/catalogue).
     let owns = [];
+    let loyalty = false;
     try {
       const snap = await getAdmin().firestore().doc('config/catalogue').get();
-      const pkgs = (snap.exists ? snap.data().packages : null) || [];
+      const data = snap.exists ? snap.data() : {};
+      const pkgs = data.packages || [];
       owns = pkgs.filter((p) => p.roleId && roles.includes(p.roleId)).map((p) => p.id);
+      loyalty = !!(data.loyaltyRoleId && roles.includes(data.loyaltyRoleId));
     } catch (_) { /* catalogue not set yet */ }
 
     const token = await getAdmin().auth().createCustomToken(me.id, {
@@ -73,6 +76,7 @@ export default async function handler(req, res) {
       tag: me.global_name || me.username,
       avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png` : null,
       owns,
+      loyalty,
     });
     res.json({ token });
   } catch (e) {

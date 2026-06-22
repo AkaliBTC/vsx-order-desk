@@ -34,6 +34,7 @@ export function AuthProvider({ children }) {
         avatar: token.claims.avatar || null,
         isMod: token.claims.mod === true,
         owns: Array.isArray(token.claims.owns) ? token.claims.owns : [],
+        loyalty: token.claims.loyalty === true,
       });
       setReady(true);
     });
