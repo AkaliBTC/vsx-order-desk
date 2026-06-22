@@ -198,9 +198,15 @@ export default function Shop() {
         <ConsentModal discKeys={discKeys} total={total} onClose={() => setConsentOpen(false)}
           onConfirm={async () => {
             const items = [...lineItems.map(({ disc, ...rest }) => rest), ...discountLines];
+            const grants = basket.filter((b) => b.kind === 'package').map((b) => {
+              const p = pkgById(b.pkgId); const rt = runtimeByKey(b.runtimeKey);
+              return { pkgId: p.id, roleId: p.roleId || '', months: rt.months };
+            });
+            const services = basket.filter((b) => b.kind === 'service').map((b) => svcById(b.serviceId).name);
             const ref = await addDoc(collection(db, 'tickets'), {
               userId: user.uid, userTag: user.tag, userAvatar: user.avatar,
               items, total,
+              grants, services,
               discount: applied ? { code: applied.code, percent: applied.percent } : null,
               loyalty: loyaltyOff > 0,
               consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },

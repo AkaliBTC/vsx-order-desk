@@ -3,7 +3,7 @@ import {
   collection, query, orderBy, onSnapshot, doc, updateDoc, setDoc,
   getDocs, deleteDoc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { useCatalogue } from '../catalogue';
 import { postTranscript, checkTronPayment } from '../lib';
@@ -71,9 +71,26 @@ function AdminDetail({ ticket, modTag }) {
   const p = ticket.payment || {};
   const [checking, setChecking] = useState(false);
 
-  const confirmPayment = () => updateDoc(doc(db, 'tickets', ticket.id), {
-    status: 'paid', 'payment.status': 'paid', 'payment.confirmedBy': modTag, 'payment.confirmedAt': serverTimestamp(),
-  });
+  const grantRoles = async () => {
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/grant-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ ticketId: ticket.id }),
+      });
+      const data = await r.json();
+      if (!r.ok) { alert('Role grant failed: ' + (data.error || r.status)); return; }
+      if ((data.failed || []).length) alert('Some roles failed: ' + data.failed.join(', '));
+    } catch (e) { alert('Role grant failed: ' + e.message); }
+  };
+
+  const confirmPayment = async () => {
+    await updateDoc(doc(db, 'tickets', ticket.id), {
+      status: 'paid', 'payment.status': 'paid', 'payment.confirmedBy': modTag, 'payment.confirmedAt': serverTimestamp(),
+    });
+    await grantRoles();
+  };
 
   const closeTicket = async () => {
     if (!confirm('Close ticket? A transcript is sent to the archive, then the ticket is deleted.')) return;
@@ -97,6 +114,7 @@ function AdminDetail({ ticket, modTag }) {
           status: 'paid', 'payment.status': 'paid', 'payment.txHash': tx,
           'payment.confirmedBy': 'auto:tron', 'payment.confirmedAt': serverTimestamp(),
         });
+        await grantRoles();
       } else { alert('No matching USDT payment found yet.'); }
     } catch (e) { alert('Check failed: ' + e.message); }
     setChecking(false);
