@@ -21,8 +21,9 @@ export function login() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [authError, setAuthError] = useState(null);
 
-  // Surface mod status + profile from the Firebase custom claims.
+  // Profil + Mod-Status aus den Firebase Custom Claims.
   useEffect(() => {
     return onAuthStateChanged(auth, async (fbUser) => {
       if (!fbUser) { setUser(null); setReady(true); return; }
@@ -37,23 +38,30 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
-  // Handle the ?code= redirect once on load.
+  // ?code= vom Discord-Redirect einmalig verarbeiten.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (!code) return;
     (async () => {
       try {
-        const res = await fetch(`/api/discord-auth`, {
+        const res = await fetch('/api/discord-auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, redirectUri: REDIRECT_URI }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'auth failed');
+        const text = await res.text();
+        let data = {};
+        try { data = JSON.parse(text); } catch (_) {
+          throw new Error('Server-Antwort unlesbar: ' + text.slice(0, 140));
+        }
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        if (!data.token) throw new Error('Kein Token erhalten');
         await signInWithCustomToken(auth, data.token);
+        setAuthError(null);
       } catch (e) {
-        console.error(e);
+        setAuthError(e.message || 'Login fehlgeschlagen');
+        console.error('Login-Fehler:', e);
       } finally {
         window.history.replaceState({}, '', window.location.pathname);
       }
@@ -61,7 +69,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, ready, login, logout: () => signOut(auth) }}>
+    <AuthCtx.Provider value={{ user, ready, authError, login, logout: () => signOut(auth) }}>
       {children}
     </AuthCtx.Provider>
   );
