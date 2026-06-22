@@ -55,13 +55,15 @@ function Gate({ children, mod }) {
   if (!ready) return <div className="shell" style={{ paddingTop: 60 }}>Loading…</div>;
   if (!user) return (
     <div className="shell" style={{ paddingTop: 80, textAlign: 'center' }}>
-      <img src="/logo.png" alt="VisionX" height={90} style={{ marginBottom: 18 }} />
-      <p className="eyebrow">Access</p>
-      <h1 style={{ fontSize: 34, margin: '12px 0 10px' }}>Welcome to VisionX</h1>
-      <p style={{ color: 'var(--vsx-muted)', marginBottom: 24 }}>
+      <img className="floaty" src="/logo.png" alt="VisionX" height={96} style={{ marginBottom: 18, filter: 'drop-shadow(0 18px 50px rgba(212,175,55,.25))' }} />
+      <p className="eyebrow rise" style={{ animationDelay: '.05s' }}>Access</p>
+      <h1 className="rise" style={{ fontSize: 34, margin: '12px 0 10px', animationDelay: '.12s' }}>Welcome to VisionX</h1>
+      <p className="rise" style={{ color: 'var(--vsx-muted)', marginBottom: 24, animationDelay: '.19s' }}>
         Please sign in with Discord to view the analysis packages.
       </p>
-      <button className="btn" onClick={login}>Sign in with Discord</button>
+      <div className="rise" style={{ animationDelay: '.26s' }}>
+        <button className="btn" onClick={login}>Sign in with Discord</button>
+      </div>
     </div>
   );
   if (mod && !user.isMod) return <Navigate to="/" replace />;

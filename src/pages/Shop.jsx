@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -50,25 +51,25 @@ export default function Shop() {
   const add = (item) => setBasket((b) => [...b, item]);
   const remove = (i) => setBasket((b) => b.filter((_, idx) => idx !== i));
 
-  const lineItems = basket.flatMap((b) => {
+  const lineItems = basket.flatMap((b, bi) => {
     const rt = runtimeByKey(b.runtimeKey);
     if (b.kind === 'package') {
       const p = pkgById(b.pkgId);
-      const out = [{ name: `${p.name} · ${rt.label}`, price: Number(p.prices[b.runtimeKey]) || 0, disc: 'analysis' }];
+      const out = [{ bi, name: `${p.name} · ${rt.label}`, price: Number(p.prices[b.runtimeKey]) || 0, disc: 'analysis' }];
       if (b.withTracker && p.tracker && !hasPremiumPlus) {
-        out.push({ name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: cat.tracker.perPackage * rt.months, disc: 'tracker' });
+        out.push({ bi, name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: cat.tracker.perPackage * rt.months, disc: 'tracker' });
       }
       return out;
     }
     if (b.kind === 'trackerOnly') {
       const p = pkgById(b.pkgId);
-      return [{ name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: cat.tracker.perPackage * rt.months, disc: 'tracker' }];
+      return [{ bi, name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: cat.tracker.perPackage * rt.months, disc: 'tracker' }];
     }
     if (b.kind === 'premiumplus') {
-      return [{ name: `Premium+ · Portfolio Tracker (all) · ${rt.label}`, price: cat.tracker.premiumPlus * rt.months, disc: 'tracker' }];
+      return [{ bi, name: `Premium+ · Portfolio Tracker (all) · ${rt.label}`, price: cat.tracker.premiumPlus * rt.months, disc: 'tracker' }];
     }
     const s = svcById(b.serviceId);
-    return [{ name: `${s.name}${s.unit ? ` ${s.unit}` : ''}`, price: Number(s.price) || 0, disc: s.id === 'deepdive' ? 'deepdive' : 'coaching' }];
+    return [{ bi, name: `${s.name}${s.unit ? ` ${s.unit}` : ''}`, price: Number(s.price) || 0, disc: s.id === 'deepdive' ? 'deepdive' : 'coaching' }];
   });
 
   const total0 = lineItems.reduce((s, x) => s + x.price, 0);
@@ -93,17 +94,19 @@ export default function Shop() {
   return (
     <div className="shell" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 28, alignItems: 'start' }}>
       <section>
-        <p className="eyebrow">Catalog</p>
-        <h1 style={{ fontSize: 32, margin: '8px 0 14px' }}>Analysis Packages</h1>
+        <p className="eyebrow rise">Catalog</p>
+        <h1 className="rise" style={{ fontSize: 32, margin: '8px 0 14px', animationDelay: '.06s' }}>Analysis Packages</h1>
 
-        <div className="card" style={{ padding: '14px 18px', marginBottom: 22, borderColor: 'var(--vsx-gold-2)' }}>
+        <motion.div className="card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          style={{ padding: '14px 18px', marginBottom: 22, borderColor: 'var(--vsx-gold-2)' }}>
           <p className="eyebrow" style={{ marginBottom: 8 }}>Included free</p>
           {cat.freebies.map((f, i) => <div key={i} style={{ fontSize: 14 }}>★ {f}</div>)}
-        </div>
+        </motion.div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          {cat.packages.map((p) => (
-            <PackageCard key={p.id} pkg={p} trackerPrice={cat.tracker.perPackage}
+          {cat.packages.map((p, i) => (
+            <PackageCard key={p.id} index={i} pkg={p} trackerPrice={cat.tracker.perPackage}
               allowTracker={p.tracker && !hasPremiumPlus} onAdd={add} />
           ))}
         </div>
@@ -129,8 +132,12 @@ export default function Shop() {
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          {cat.services.map((s) => (
-            <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          {cat.services.map((s, i) => (
+            <motion.div key={s.id} className="card"
+              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }}
+              transition={{ duration: 0.5, delay: i * 0.05, ease: [0.22, 1, 0.36, 1] }}
+              whileHover={{ y: -5, transition: { type: 'spring', stiffness: 320, damping: 22 } }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <h3 style={{ fontSize: 18 }}>{s.name}</h3>
                 <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>{s.desc}</p>
@@ -139,9 +146,9 @@ export default function Shop() {
                 <div className="mono display" style={{ fontSize: 18, color: 'var(--vsx-gold)' }}>
                   {fmt(s.price)}<span style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>{s.unit || ''}</span>
                 </div>
-                <button className="btn-ghost" style={{ marginTop: 8 }} onClick={() => add({ kind: 'service', serviceId: s.id })}>Add</button>
+                <motion.button className="btn-ghost" whileTap={{ scale: 0.96 }} style={{ marginTop: 8 }} onClick={() => add({ kind: 'service', serviceId: s.id })}>Add</motion.button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       </section>
@@ -150,15 +157,22 @@ export default function Shop() {
         <div className="card" style={{ position: 'sticky', top: 24 }}>
           <p className="eyebrow">Cart</p>
           {lineItems.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 14 }}>Empty. Add packages or services.</p>}
-          {lineItems.map((it, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid var(--vsx-line)', gap: 8 }}>
-              <div style={{ fontSize: 13 }}>{it.name}</div>
-              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                <div className="mono" style={{ fontSize: 13 }}>{fmt(it.price)}</div>
-                <button onClick={() => remove(i)} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 11, padding: 0 }}>remove</button>
-              </div>
-            </div>
-          ))}
+          <AnimatePresence initial={false}>
+            {lineItems.map((it, i) => (
+              <motion.div key={i} layout
+                initial={{ opacity: 0, x: 20, height: 0 }}
+                animate={{ opacity: 1, x: 0, height: 'auto' }}
+                exit={{ opacity: 0, x: -20, height: 0 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid var(--vsx-line)', gap: 8, overflow: 'hidden' }}>
+                <div style={{ fontSize: 13 }}>{it.name}</div>
+                <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <div className="mono" style={{ fontSize: 13 }}>{fmt(it.price)}</div>
+                  <button onClick={() => remove(it.bi)} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 11, padding: 0 }}>remove</button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
           {lineItems.length > 0 && (
             <>
               {discountLines.map((d, i) => (
@@ -184,23 +198,42 @@ export default function Shop() {
                 {codeError && <p style={{ color: 'var(--vsx-err)', fontSize: 12, marginTop: 6 }}>{codeError}</p>}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, alignItems: 'baseline' }}>
                 <span className="eyebrow">Total</span>
-                <span className="mono display" style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{fmt(total)}</span>
+                <AnimatePresence mode="popLayout">
+                  <motion.span key={total} className="mono display"
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+                    style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{fmt(total)}</motion.span>
+                </AnimatePresence>
               </div>
-              <button className="btn" style={{ width: '100%', marginTop: 16 }} onClick={() => setConsentOpen(true)}>Open ticket</button>
+              <motion.button className="btn" whileTap={{ scale: 0.97 }} style={{ width: '100%', marginTop: 16 }} onClick={() => setConsentOpen(true)}>Open ticket</motion.button>
             </>
           )}
         </div>
       </aside>
 
-      {consentOpen && (
-        <ConsentModal discKeys={discKeys} total={total} onClose={() => setConsentOpen(false)}
+      <AnimatePresence>
+        {consentOpen && (
+          <ConsentModal discKeys={discKeys} total={total} onClose={() => setConsentOpen(false)}
           onConfirm={async () => {
-            const items = [...lineItems.map(({ disc, ...rest }) => rest), ...discountLines];
-            const grants = basket.filter((b) => b.kind === 'package').map((b) => {
-              const p = pkgById(b.pkgId); const rt = runtimeByKey(b.runtimeKey);
-              return { pkgId: p.id, roleId: p.roleId || '', months: rt.months };
+            const items = [...lineItems.map(({ disc, bi, ...rest }) => rest), ...discountLines];
+            const grants = basket.flatMap((b) => {
+              const rt = runtimeByKey(b.runtimeKey);
+              if (b.kind === 'package') {
+                const p = pkgById(b.pkgId);
+                const out = [{ roleId: p.roleId || '', months: rt.months, label: p.name }];
+                if (b.withTracker && p.tracker) out.push({ roleId: p.ptRoleId || '', months: rt.months, label: `${p.name} PT` });
+                return out;
+              }
+              if (b.kind === 'trackerOnly') {
+                const p = pkgById(b.pkgId);
+                return [{ roleId: p.ptRoleId || '', months: rt.months, label: `${p.name} PT` }];
+              }
+              if (b.kind === 'premiumplus') {
+                return [{ roleId: cat.premiumPlusRoleId || '', months: rt.months, label: 'Premium+ PT' }];
+              }
+              return [];
             });
             const services = basket.filter((b) => b.kind === 'service').map((b) => svcById(b.serviceId).name);
             const ref = await addDoc(collection(db, 'tickets'), {
@@ -216,19 +249,25 @@ export default function Shop() {
             try { await postTicketEmbed({ id: ref.id, userTag: user.tag, items, total }); } catch (_) {}
             navigate(`/ticket/${ref.id}`);
           }} />
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function PackageCard({ pkg, trackerPrice, allowTracker, onAdd }) {
+function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, onAdd }) {
   const [rtKey, setRtKey] = useState('1M');
   const [tracker, setTracker] = useState(false);
   const price = pkg.prices[rtKey];
   const soon = price == null || price === '';
 
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: pkg.highlight ? 'var(--vsx-gold-2)' : 'var(--vsx-line)' }}>
+    <motion.div className="card"
+      initial={{ opacity: 0, y: 26 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -6, transition: { type: 'spring', stiffness: 320, damping: 22 } }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: pkg.highlight ? 'var(--vsx-gold-2)' : 'var(--vsx-line)', boxShadow: pkg.highlight ? 'var(--glow-gold)' : undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <h3 style={{ fontSize: 19 }}>{pkg.name}</h3>
         {pkg.highlight && <span className="tag gold">Premium</span>}
@@ -237,18 +276,23 @@ function PackageCard({ pkg, trackerPrice, allowTracker, onAdd }) {
       <select value={rtKey} onChange={(e) => setRtKey(e.target.value)}>
         {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
       </select>
-      <div className="mono display" style={{ fontSize: 22, color: soon ? 'var(--vsx-muted)' : 'var(--vsx-gold)' }}>
-        {soon ? 'Coming soon' : fmt(price)}
-      </div>
+      <AnimatePresence mode="wait">
+        <motion.div key={soon ? 'soon' : price} className="mono display"
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25 }}
+          style={{ fontSize: 22, color: soon ? 'var(--vsx-muted)' : 'var(--vsx-gold)' }}>
+          {soon ? 'Coming soon' : fmt(price)}
+        </motion.div>
+      </AnimatePresence>
       {allowTracker && (
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
           + Portfolio Tracker ({fmt(trackerPrice)}/mo)
         </label>
       )}
-      <button className="btn" disabled={soon}
-        onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>Add</button>
-    </div>
+      <motion.button className="btn" disabled={soon} whileTap={{ scale: 0.96 }}
+        onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>Add</motion.button>
+    </motion.div>
   );
 }
 
@@ -298,8 +342,11 @@ function ConsentModal({ discKeys, total, onClose, onConfirm }) {
   const [checked, setChecked] = useState({});
   const all = discKeys.every((_, i) => checked[i]);
   return (
-    <div style={{ position: 'absolute', inset: 0, minHeight: '100vh', background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', zIndex: 20 }}>
-      <div className="card" style={{ maxWidth: 560, width: '100%' }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{ position: 'absolute', inset: 0, minHeight: '100vh', background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', zIndex: 20 }}>
+      <motion.div className="card" style={{ maxWidth: 560, width: '100%' }}
+        initial={{ opacity: 0, y: 30, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 26 }}>
         <p className="eyebrow">Consent</p>
         <h2 style={{ fontSize: 24, margin: '8px 0 4px' }}>Confirm disclaimers</h2>
         <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 0 }}>Please confirm the disclaimers below to open your ticket.</p>
@@ -313,9 +360,9 @@ function ConsentModal({ discKeys, total, onClose, onConfirm }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" disabled={!all} onClick={onConfirm}>Open ticket · {fmt(total)}</button>
+          <motion.button className="btn" whileTap={{ scale: 0.97 }} disabled={!all} onClick={onConfirm}>Open ticket · {fmt(total)}</motion.button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

@@ -226,9 +226,12 @@ function CatalogueEditor() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div><label style={lbl}>Name</label><input style={inp} value={p.name} onChange={(e) => setPkg(i, 'name', e.target.value)} /></div>
-            <div><label style={lbl}>Discord role ID (ownership)</label><input style={inp} value={p.roleId || ''} onChange={(e) => setPkg(i, 'roleId', e.target.value)} placeholder="leave empty if none" /></div>
+            <div><label style={lbl}>Description</label><input style={inp} value={p.desc} onChange={(e) => setPkg(i, 'desc', e.target.value)} /></div>
           </div>
-          <div><label style={lbl}>Description</label><input style={inp} value={p.desc} onChange={(e) => setPkg(i, 'desc', e.target.value)} /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div><label style={lbl}>Discord role ID — ownership</label><input style={inp} value={p.roleId || ''} onChange={(e) => setPkg(i, 'roleId', e.target.value)} placeholder="role granted on purchase" /></div>
+            <div><label style={lbl}>Discord role ID — Portfolio Tracker</label><input style={inp} value={p.ptRoleId || ''} onChange={(e) => setPkg(i, 'ptRoleId', e.target.value)} placeholder="PT role for this package" /></div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {RUNTIMES.map((r) => (
               <div key={r.key}>
@@ -249,6 +252,11 @@ function CatalogueEditor() {
         <div><label style={lbl}>Premium+ (all)</label>
           <input style={inp} type="number" value={form.tracker.premiumPlus}
             onChange={(e) => setForm((f) => ({ ...f, tracker: { ...f.tracker, premiumPlus: Number(e.target.value) } }))} /></div>
+      </div>
+      <div className="card">
+        <label style={lbl}>Premium+ Discord role ID (Portfolio Tracker for all packages)</label>
+        <input style={inp} value={form.premiumPlusRoleId || ''} placeholder="PT-all role"
+          onChange={(e) => setForm((f) => ({ ...f, premiumPlusRoleId: e.target.value }))} />
       </div>
 
       <p className="eyebrow" style={{ marginTop: 10 }}>Loyalty</p>

@@ -38,19 +38,19 @@ export default async function handler(req, res) {
 
     // 1) Temp roles for analysis packages.
     for (const g of (t.grants || [])) {
-      if (!g.roleId) { failed.push(`${g.pkgId} (no role set)`); continue; }
+      if (!g.roleId) { failed.push(`${g.label} (no role set)`); continue; }
       const r = await fetch(`${API}/guilds/${GUILD()}/members/${userId}/roles/${g.roleId}`, {
         method: 'PUT', headers: { Authorization: BOT() },
       });
       if (r.ok || r.status === 204) {
         const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + g.months * 30 * 24 * 3600 * 1000);
         await db.collection('entitlements').add({
-          userId, roleId: g.roleId, pkgId: g.pkgId, ticketId, expiresAt,
+          userId, roleId: g.roleId, label: g.label || null, ticketId, expiresAt,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-        granted.push(g.pkgId);
+        granted.push(g.label);
       } else {
-        failed.push(`${g.pkgId} (discord ${r.status})`);
+        failed.push(`${g.label} (discord ${r.status})`);
       }
     }
 
