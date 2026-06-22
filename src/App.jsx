@@ -19,8 +19,12 @@ function Header() {
         {user?.isMod && <Link to="/admin" className="tag gold">Admin</Link>}
         {user ? (
           <>
-            <span className="mono" style={{ fontSize: 13, color: 'var(--vsx-muted)' }}>{user.tag}</span>
-            <button className="btn-ghost" onClick={logout}>Logout</button>
+            {user.avatar && (
+              <img src={user.avatar} alt="" width={28} height={28}
+                style={{ borderRadius: '50%', border: '1px solid var(--vsx-line)' }} />
+            )}
+            <span className="mono" style={{ fontSize: 13 }}>{user.tag}</span>
+            <button className="btn-ghost" onClick={logout}>Abmelden</button>
           </>
         ) : (
           <button className="btn" onClick={login}>Mit Discord anmelden</button>
@@ -30,13 +34,31 @@ function Header() {
   );
 }
 
+function ErrorBanner() {
+  const { authError } = useAuth();
+  if (!authError) return null;
+  return (
+    <div className="shell" style={{ paddingBottom: 0 }}>
+      <div style={{
+        background: 'rgba(192,83,63,.12)', border: '1px solid #5b2e26',
+        borderRadius: 10, padding: '12px 16px', color: '#e7a08f', fontSize: 14,
+      }}>
+        <b>Login-Fehler:</b> <span className="mono">{authError}</span>
+      </div>
+    </div>
+  );
+}
+
 function Gate({ children, mod }) {
   const { user, ready } = useAuth();
   if (!ready) return <div className="shell" style={{ paddingTop: 60 }}>Lädt…</div>;
   if (!user) return (
     <div className="shell" style={{ paddingTop: 80, textAlign: 'center' }}>
       <p className="eyebrow">Zugang</p>
-      <h1 style={{ fontSize: 34, margin: '12px 0 20px' }}>Bitte mit Discord anmelden</h1>
+      <h1 style={{ fontSize: 34, margin: '12px 0 10px' }}>Willkommen bei VisionX</h1>
+      <p style={{ color: 'var(--vsx-muted)', marginBottom: 24 }}>
+        Bitte melde dich mit Discord an, um die Analysepakete zu sehen.
+      </p>
       <button className="btn" onClick={login}>Mit Discord anmelden</button>
     </div>
   );
@@ -49,8 +71,9 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Header />
+        <ErrorBanner />
         <Routes>
-          <Route path="/" element={<Shop />} />
+          <Route path="/" element={<Gate><Shop /></Gate>} />
           <Route path="/ticket/:id" element={<Gate><Ticket /></Gate>} />
           <Route path="/admin" element={<Gate mod><Admin /></Gate>} />
         </Routes>
