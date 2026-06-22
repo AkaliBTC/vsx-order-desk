@@ -76,12 +76,24 @@ function AdminDetail({ ticket, modTag }) {
       const r = await fetch('/api/grant-role', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ ticketId: ticket.id }),
+        body: JSON.stringify({
+          ticketId: ticket.id,
+          userId: ticket.userId,
+          userTag: ticket.userTag,
+          grants: ticket.grants || [],
+          services: ticket.services || [],
+        }),
       });
-      const data = await r.json();
-      if (!r.ok) { alert('Role grant failed: ' + (data.error || r.status)); return; }
-      if ((data.failed || []).length) alert('Some roles failed: ' + data.failed.join(', '));
-    } catch (e) { alert('Role grant failed: ' + e.message); }
+      const d = await r.json();
+      if (!r.ok) { alert('Fulfillment failed: ' + (d.error || r.status)); return; }
+      const lines = [];
+      if (d.granted?.length) lines.push('Roles granted: ' + d.granted.join(', '));
+      if (d.channels?.length) lines.push('Ticket channels: ' + d.channels.join(', '));
+      if (d.failed?.length) lines.push('Roles failed: ' + d.failed.join(', '));
+      if (d.channelErrors?.length) lines.push('Channels failed: ' + d.channelErrors.join(', '));
+      if (d.expiryWarning) lines.push('Note: auto-expiry not stored (' + d.expiryWarning + ')');
+      if (lines.length) alert(lines.join('\n'));
+    } catch (e) { alert('Fulfillment failed: ' + e.message); }
   };
 
   const confirmPayment = async () => {
