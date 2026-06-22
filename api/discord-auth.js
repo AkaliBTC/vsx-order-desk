@@ -59,10 +59,20 @@ export default async function handler(req, res) {
     const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '')
       .split(',').map((s) => s.trim()).filter(Boolean);
 
+    // Which packages does this customer already own? Match Discord roles
+    // against each package's roleId in the live catalogue (config/catalogue).
+    let owns = [];
+    try {
+      const snap = await getAdmin().firestore().doc('config/catalogue').get();
+      const pkgs = (snap.exists ? snap.data().packages : null) || [];
+      owns = pkgs.filter((p) => p.roleId && roles.includes(p.roleId)).map((p) => p.id);
+    } catch (_) { /* catalogue not set yet */ }
+
     const token = await getAdmin().auth().createCustomToken(me.id, {
       mod: roles.some((r) => modRoles.includes(r)),
       tag: me.global_name || me.username,
       avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png` : null,
+      owns,
     });
     res.json({ token });
   } catch (e) {

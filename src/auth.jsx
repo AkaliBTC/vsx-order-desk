@@ -33,6 +33,7 @@ export function AuthProvider({ children }) {
         tag: token.claims.tag || 'Member',
         avatar: token.claims.avatar || null,
         isMod: token.claims.mod === true,
+        owns: Array.isArray(token.claims.owns) ? token.claims.owns : [],
       });
       setReady(true);
     });
