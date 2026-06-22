@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function isMod() { return isSignedIn() && request.auth.token.mod == true; }
+
+    // Catalogue is read-only to clients; managed via console / functions.
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isMod();
+    }
+
+    match /tickets/{id} {
+      function isOwner() { return isSignedIn() && resource.data.userId == request.auth.uid; }
+
+      allow read: if isOwner() || isMod();
+
+      // Create: only as yourself, must start unpaid + awaiting_payment.
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'awaiting_payment'
+        && request.resource.data.payment.status == 'unpaid';
+
+      // Owner may set payment method/proof but NOT flip status to paid/closed.
+      // Status transitions to paid/closed are done by mods or the Admin SDK
+      // (verifyTron / triggers), which bypass these rules.
+      allow update: if isMod()
+        || (isOwner()
+            && request.resource.data.status == 'awaiting_payment'
+            && request.resource.data.userId == resource.data.userId);
+
+      allow delete: if isMod();
+
+      match /messages/{mid} {
+        allow read: if get(/databases/$(database)/documents/tickets/$(id)).data.userId == request.auth.uid || isMod();
+        allow create: if isSignedIn()
+          && (get(/databases/$(database)/documents/tickets/$(id)).data.userId == request.auth.uid || isMod())
+          && request.resource.data.body is string
+          && request.resource.data.body.size() < 2000;
+        allow update: if false;
+        allow delete: if isMod();
+      }
+    }
+  }
+}
