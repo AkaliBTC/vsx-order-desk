@@ -225,17 +225,30 @@ export function Chat({ ticket, user }) {
     <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 560, position: 'sticky', top: 24 }}>
       <p className="eyebrow">Ticket chat</p>
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, margin: '12px 0' }}>
-        {messages.map((m) => (
-          <div key={m.id} style={{ alignSelf: m.from === 'customer' ? 'flex-start' : 'flex-end', maxWidth: '85%' }}>
-            <div className="mono" style={{ fontSize: 10, color: 'var(--vsx-muted)', textAlign: m.from === 'customer' ? 'left' : 'right' }}>
-              {m.from === 'system' ? 'SYSTEM' : m.authorTag}
+        {messages.map((m) => {
+          const role = m.from; // 'mod' | 'customer' | 'system'
+          if (role === 'system') {
+            return (
+              <div key={m.id} className="mono" style={{ alignSelf: 'center', fontSize: 11, color: 'var(--vsx-muted)', padding: '2px 0' }}>{m.body}</div>
+            );
+          }
+          const isTeam = role === 'mod';
+          const mine = role === (user.isMod ? 'mod' : 'customer');
+          return (
+            <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '78%', display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+              <div className="mono" style={{ fontSize: 10, color: isTeam ? 'var(--vsx-gold-2)' : 'var(--vsx-muted)', margin: '0 8px 3px' }}>
+                {m.authorTag}{isTeam ? ' · Team' : ''}
+              </div>
+              <div style={{
+                background: isTeam ? 'linear-gradient(180deg, rgba(212,175,55,.20), rgba(212,175,55,.10))' : 'var(--vsx-charcoal-3)',
+                border: isTeam ? '1px solid var(--vsx-gold-2)' : '1px solid var(--vsx-line)',
+                color: 'var(--vsx-offwhite)',
+                borderRadius: mine ? '16px 16px 5px 16px' : '16px 16px 16px 5px',
+                padding: '9px 13px', fontSize: 14, lineHeight: 1.45, boxShadow: 'var(--shadow-soft)', wordBreak: 'break-word',
+              }}>{m.body}</div>
             </div>
-            <div style={{
-              background: m.from === 'customer' ? 'var(--vsx-charcoal-3)' : 'rgba(212,175,55,.12)',
-              border: '1px solid var(--vsx-line)', borderRadius: 8, padding: '8px 12px', fontSize: 14, marginTop: 3,
-            }}>{m.body}</div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={endRef} />
       </div>
       {ticket.status !== 'closed' && (

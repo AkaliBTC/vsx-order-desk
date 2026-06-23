@@ -124,8 +124,11 @@ export default function Shop() {
   ];
 
   // Packages the user can add a standalone tracker for (owns role, not buying now).
+  // Trackers you can add standalone = packages you ACTUALLY own via a Discord role
+  // (not packages you're buying right now — Premium in the cart does not count here).
+  const ownsPremiumRole = owns.includes('premium');
   const ownedTrackable = hasPremiumPlus ? [] : cat.packages.filter(
-    (p) => p.tracker && !buyingIds.has(p.id) && (ownsPremium || owns.includes(p.id)),
+    (p) => p.tracker && !buyingIds.has(p.id) && (ownsPremiumRole || owns.includes(p.id)),
   );
 
   return (
@@ -275,7 +278,9 @@ export default function Shop() {
               }
               return [];
             });
-            const services = basket.filter((b) => b.kind === 'service').map((b) => svcById(b.serviceId).name);
+            const services = basket.filter((b) => b.kind === 'service').map((b) => {
+              const s = svcById(b.serviceId); return { id: s.id, name: s.name };
+            });
             const ref = await addDoc(collection(db, 'tickets'), {
               userId: user.uid, userTag: user.tag, userAvatar: user.avatar,
               items, total,

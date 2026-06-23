@@ -117,6 +117,16 @@ function AdminDetail({ ticket, modTag, user }) {
     } catch (e) { alert('Closing failed: ' + e.message); }
   };
 
+  const deleteTicket = async () => {
+    if (!confirm('Delete ticket permanently? No transcript is saved — this cannot be undone.')) return;
+    const msgsRef = collection(db, 'tickets', ticket.id, 'messages');
+    try {
+      const snap = await getDocs(msgsRef);
+      await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+      await deleteDoc(doc(db, 'tickets', ticket.id));
+    } catch (e) { alert('Delete failed: ' + e.message); }
+  };
+
   const checkChain = async () => {
     setChecking(true);
     try {
@@ -164,6 +174,7 @@ function AdminDetail({ ticket, modTag, user }) {
         )}
         {ticket.status !== 'paid' && <button className="btn-ghost" onClick={confirmPayment}>Confirm payment</button>}
         <button className="btn" onClick={closeTicket}>Close &amp; archive ticket</button>
+        <button className="btn-ghost" onClick={deleteTicket} style={{ color: 'var(--vsx-err)', borderColor: '#5b2e26' }}>Delete (no archive)</button>
       </div>
       <div>
         <p className="eyebrow" style={{ marginBottom: 10 }}>Chat with customer</p>

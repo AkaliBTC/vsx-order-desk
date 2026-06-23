@@ -58,6 +58,7 @@ export default async function handler(req, res) {
 
     const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '')
       .split(',').map((s) => s.trim()).filter(Boolean);
+    const adminRole = (process.env.DISCORD_ADMIN_ROLE_ID || '').trim();
 
     // Which packages does this customer already own? Match Discord roles
     // against each package's roleId in the live catalogue (config/catalogue).
@@ -73,6 +74,7 @@ export default async function handler(req, res) {
 
     const token = await getAdmin().auth().createCustomToken(me.id, {
       mod: roles.some((r) => modRoles.includes(r)),
+      admin: adminRole ? roles.includes(adminRole) : false,
       tag: me.global_name || me.username,
       avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png` : null,
       owns,

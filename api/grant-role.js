@@ -24,6 +24,14 @@ function chanName(s) {
   return n || 'ticket';
 }
 
+// Which Discord role to ping in the ticket channel, per service id.
+const PING_ROLE = {
+  'deepdive': '704243714687631370',
+  'coach-michael': '704243714687631370',
+  'coach-filip': '880178639436673074',
+  'coach-akali': '774014917057314877',
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
   try {
@@ -71,12 +79,16 @@ export default async function handler(req, res) {
         channelErrors.push('No DISCORD_TICKET_CATEGORY_ID set');
       } else {
         const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
-        for (const s of services) {
-          const name = chanName(`${s} ${userTag || userId}`);
+        for (const svc of services) {
+          const sName = typeof svc === 'string' ? svc : svc.name;
+          const sId = typeof svc === 'string' ? '' : svc.id;
+          const pingRole = PING_ROLE[sId] || '';
+          const name = chanName(`${sName} ${userTag || userId}`);
           const overwrites = [
             { id: GUILD(), type: 0, deny: String(VIEW) },        // @everyone hidden
             { id: userId, type: 1, allow: String(VIEW) },        // customer can see
             ...modRoles.map((rid) => ({ id: rid, type: 0, allow: String(VIEW) })), // team can see
+            ...(pingRole ? [{ id: pingRole, type: 0, allow: String(VIEW) }] : []),  // responsible team
           ];
           const r = await fetch(`${API}/guilds/${GUILD()}/channels`, {
             method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
@@ -85,12 +97,20 @@ export default async function handler(req, res) {
           if (r.ok) {
             const ch = await r.json();
             channels.push(name);
+            const ping = pingRole ? `<@&${pingRole}>` : 'Our team';
+            const content =
+              `Hey <@${userId}> 👋 — thank you for your trust and your payment for **${sName}**! 🤍\n\n` +
+              `${ping} will reach out to you right here in just a moment to get everything started. ` +
+              `Feel free to drop any details, goals or questions in the meantime so we can hit the ground running. ⭐`;
             await fetch(`${API}/channels/${ch.id}/messages`, {
               method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: `<@${userId}> — **${s}**\nThanks for your order! The team will take care of you right here.` }),
+              body: JSON.stringify({
+                content,
+                allowed_mentions: { users: [userId], roles: pingRole ? [pingRole] : [] },
+              }),
             }).catch(() => {});
           } else {
-            channelErrors.push(`${s} (discord ${r.status})`);
+            channelErrors.push(`${sName} (discord ${r.status})`);
           }
         }
       }

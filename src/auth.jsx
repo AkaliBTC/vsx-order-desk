@@ -33,6 +33,7 @@ export function AuthProvider({ children }) {
         tag: token.claims.tag || 'Member',
         avatar: token.claims.avatar || null,
         isMod: token.claims.mod === true,
+        isAdmin: token.claims.admin === true,
         owns: Array.isArray(token.claims.owns) ? token.claims.owns : [],
         loyalty: token.claims.loyalty === true,
       });
