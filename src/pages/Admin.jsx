@@ -6,6 +6,7 @@ import {
 import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { postTranscript, checkTronPayment } from '../lib';
+import { Chat } from './Ticket';
 import { PAYMENT, RUNTIMES, fmt, DEFAULT_CATALOGUE } from '../data';
 
 export default function Admin() {
@@ -60,13 +61,13 @@ function Tickets({ user }) {
       </aside>
       <main>
         {!active ? <div className="card"><p style={{ color: 'var(--vsx-muted)' }}>Select a ticket on the left.</p></div>
-          : <AdminDetail ticket={active} modTag={user.tag} />}
+          : <AdminDetail ticket={active} modTag={user.tag} user={user} />}
       </main>
     </div>
   );
 }
 
-function AdminDetail({ ticket, modTag }) {
+function AdminDetail({ ticket, modTag, user }) {
   const p = ticket.payment || {};
   const [checking, setChecking] = useState(false);
 
@@ -164,9 +165,10 @@ function AdminDetail({ ticket, modTag }) {
         {ticket.status !== 'paid' && <button className="btn-ghost" onClick={confirmPayment}>Confirm payment</button>}
         <button className="btn" onClick={closeTicket}>Close &amp; archive ticket</button>
       </div>
-      <p className="mono" style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>
-        To chat: <a href={`/ticket/${ticket.id}`}>open ticket view ↗</a>
-      </p>
+      <div>
+        <p className="eyebrow" style={{ marginBottom: 10 }}>Chat with customer</p>
+        <Chat ticket={ticket} user={user} />
+      </div>
     </div>
   );
 }
