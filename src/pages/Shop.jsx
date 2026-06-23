@@ -147,9 +147,11 @@ export default function Shop() {
 
   // Packages the user can add a standalone tracker for (owns role, not buying now).
   // (not packages you're buying right now — Premium in the cart does not count here).
-  const ownsPremiumRole = owns.includes('premium');
+  // Standalone trackers you can add = packages you INDIVIDUALLY own via a Discord role
+  // and aren't buying right now. Owning Premium does NOT unlock every tracker here —
+  // Premium holders add all trackers via Premium+ instead.
   const ownedTrackable = hasPremiumPlus ? [] : cat.packages.filter(
-    (p) => p.tracker && !buyingIds.has(p.id) && (ownsPremiumRole || owns.includes(p.id)),
+    (p) => p.tracker && p.id !== 'premium' && !buyingIds.has(p.id) && owns.includes(p.id),
   );
 
   return (
