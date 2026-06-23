@@ -1,5 +1,6 @@
-// Runs daily via Vercel Cron (see vercel.json). Removes temp roles whose
-// entitlement has expired and deletes the entitlement record.
+// Runs daily via Vercel Cron (see vercel.json):
+//  • removes temp roles whose entitlement has expired (+ DMs the customer)
+//  • DMs the customer once, ~3 days before a role expires
 import admin from 'firebase-admin';
 
 function getAdmin() {
@@ -10,6 +11,24 @@ function getAdmin() {
 }
 
 const API = 'https://discord.com/api/v10';
+const BOT = () => `Bot ${process.env.DISCORD_BOT_TOKEN}`;
+const SHOP = () => process.env.DISCORD_REDIRECT_URI || 'https://vsx-order-desk.vercel.app';
+
+async function dm(userId, content) {
+  try {
+    const ch = await fetch(`${API}/users/@me/channels`, {
+      method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient_id: userId }),
+    });
+    if (!ch.ok) return false;
+    const c = await ch.json();
+    const m = await fetch(`${API}/channels/${c.id}/messages`, {
+      method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    return m.ok;
+  } catch { return false; }
+}
 
 export default async function handler(req, res) {
   // Protect: if CRON_SECRET is set, require Vercel's cron auth header.
@@ -20,18 +39,42 @@ export default async function handler(req, res) {
   try {
     const db = getAdmin().firestore();
     const now = admin.firestore.Timestamp.now();
-    const snap = await db.collection('entitlements').where('expiresAt', '<=', now).get();
+    const in3d = admin.firestore.Timestamp.fromMillis(Date.now() + 3 * 24 * 3600 * 1000);
 
+    // 1) Expired → remove role + DM the customer.
+    const expired = await db.collection('entitlements').where('expiresAt', '<=', now).get();
     let removed = 0;
-    for (const d of snap.docs) {
+    for (const d of expired.docs) {
       const e = d.data();
       await fetch(`${API}/guilds/${process.env.DISCORD_GUILD_ID}/members/${e.userId}/roles/${e.roleId}`, {
-        method: 'DELETE', headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+        method: 'DELETE', headers: { Authorization: BOT() },
       }).catch(() => {});
+      await dm(e.userId,
+        `⌛ Your VisionX **${e.label || 'subscription'}** has now expired and the role was removed.\n\n` +
+        `Thank you for being part of VisionX! 🤍 You can renew anytime here:\n${SHOP()}`);
       await d.ref.delete();
       removed += 1;
     }
-    res.json({ removed });
+
+    // 2) Expiring within ~3 days, not yet reminded → DM once.
+    const soon = await db.collection('entitlements')
+      .where('expiresAt', '>', now).where('expiresAt', '<=', in3d).get();
+    let reminded = 0;
+    for (const d of soon.docs) {
+      const e = d.data();
+      if (e.reminded3d) continue;
+      const msLeft = e.expiresAt.toMillis() - Date.now();
+      const days = Math.max(1, Math.ceil(msLeft / (24 * 3600 * 1000)));
+      const date = new Date(e.expiresAt.toMillis()).toISOString().slice(0, 10);
+      await dm(e.userId,
+        `⏳ Heads up — your VisionX **${e.label || 'subscription'}** expires in ` +
+        `**${days} day${days > 1 ? 's' : ''}** (${date}).\n\n` +
+        `Renew anytime to keep your access:\n${SHOP()} 🤍`);
+      await d.ref.update({ reminded3d: true });
+      reminded += 1;
+    }
+
+    res.json({ removed, reminded });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'revoke failed' });
