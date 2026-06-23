@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import {
   doc, onSnapshot, updateDoc, collection, addDoc, query, orderBy, serverTimestamp,
@@ -76,8 +77,27 @@ function Payment({ ticket }) {
     await updateDoc(doc(db, 'tickets', ticket.id), patch);
   };
 
+  const changeMethod = () => updateDoc(doc(db, 'tickets', ticket.id), { 'payment.method': null, 'payment.status': 'unpaid' });
+
   if (paid) {
-    return <div className="card"><p className="eyebrow">Payment</p><p style={{ color: 'var(--vsx-ok)', marginTop: 10 }}>Payment confirmed. Thank you!</p></div>;
+    return (
+      <motion.div className="card" style={{ textAlign: 'center', padding: '34px 20px' }}
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+        <motion.div
+          initial={{ scale: 0 }} animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 220, damping: 14, delay: 0.05 }}
+          style={{ width: 76, height: 76, borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(84,192,138,.12)', border: '2px solid var(--vsx-ok)' }}>
+          <motion.svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="var(--vsx-ok)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <motion.path d="M20 6L9 17l-5-5"
+              initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.25, ease: 'easeOut' }} />
+          </motion.svg>
+        </motion.div>
+        <h2 style={{ fontSize: 24, margin: '0 0 6px' }}>Payment confirmed</h2>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 14, margin: 0 }}>
+          Thank you! Your order is being processed — your roles and access are on the way.
+        </p>
+      </motion.div>
+    );
   }
 
   if (!p.method) {
@@ -92,13 +112,14 @@ function Payment({ ticket }) {
     );
   }
 
-  return <PaymentInstructions ticket={ticket} />;
+  return <PaymentInstructions ticket={ticket} onChangeMethod={changeMethod} />;
 }
 
-function PaymentInstructions({ ticket }) {
+function PaymentInstructions({ ticket, onChangeMethod }) {
   const p = ticket.payment;
-  const [cooldown, setCooldown] = useState(30);
+  const [cooldown, setCooldown] = useState(15);
   const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef();
 
   useEffect(() => {
@@ -110,8 +131,11 @@ function PaymentInstructions({ ticket }) {
   const isTron = p.method === 'trc20';
   const address = isTron ? p.address : PAYMENT.paypalHandle;
   const amount = isTron ? p.expectedAmount : ticket.total;
+  const reported = !!p.markedPaidAt || submitting;
 
   const markPaid = async () => {
+    if (reported) return;
+    setSubmitting(true);
     const file = fileRef.current?.files?.[0];
     if (file) {
       setUploading(true);
@@ -128,7 +152,12 @@ function PaymentInstructions({ ticket }) {
 
   return (
     <div className="card">
-      <p className="eyebrow">{isTron ? 'USDT · TRC20' : 'PayPal'}</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p className="eyebrow">{isTron ? 'USDT · TRC20' : 'PayPal'}</p>
+        {!reported && (
+          <button onClick={onChangeMethod} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>← Change method</button>
+        )}
+      </div>
       <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 8 }}>
         {isTron
           ? 'Send the exact amount shown (including decimals) to the address. The amount is used to match your payment.'
@@ -147,26 +176,28 @@ function PaymentInstructions({ ticket }) {
         </div>
       </div>
 
-      {!isTron && (
+      {!isTron && !reported && (
         <div style={{ marginTop: 14 }}>
           <label className="eyebrow">Proof screenshot</label>
           <input ref={fileRef} type="file" accept="image/*" style={{ marginTop: 6 }} />
         </div>
       )}
 
-      <button className="btn" style={{ width: '100%', marginTop: 16 }} disabled={cooldown > 0 || uploading} onClick={markPaid}>
-        {cooldown > 0 ? `Paid (in ${cooldown}s)` : uploading ? 'Sending…' : 'Paid'}
-      </button>
-      {isTron && (
-        <p style={{ color: 'var(--vsx-muted)', fontSize: 12, marginTop: 10 }}>
-          Your payment will be verified and the ticket marked “Paid”.
-        </p>
+      {reported ? (
+        <div style={{ marginTop: 16, background: 'rgba(84,192,138,.10)', border: '1px solid #2e5b46', borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ color: 'var(--vsx-ok)', fontSize: 18 }}>✓</span>
+          <span style={{ color: 'var(--vsx-ok)', fontSize: 14 }}>Payment reported — the team will confirm it shortly. You'll see a confirmation here.</span>
+        </div>
+      ) : (
+        <button className="btn" style={{ width: '100%', marginTop: 16 }} disabled={cooldown > 0 || uploading} onClick={markPaid}>
+          {uploading ? 'Sending…' : cooldown > 0 ? `I've paid (${cooldown}s)` : "I've paid"}
+        </button>
       )}
     </div>
   );
 }
 
-function Chat({ ticket, user }) {
+export function Chat({ ticket, user }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const endRef = useRef();

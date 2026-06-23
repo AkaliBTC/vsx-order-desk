@@ -40,6 +40,8 @@ export default function Shop() {
   const buyingIds = new Set(basket.filter((b) => b.kind === 'package').map((b) => b.pkgId));
   const hasPremiumPlus = basket.some((b) => b.kind === 'premiumplus');
   const ownsPremium = owns.includes('premium') || buyingIds.has('premium');
+  const premiumInCart = basket.find((b) => b.kind === 'package' && b.pkgId === 'premium');
+  const premiumRuntimeKey = premiumInCart ? premiumInCart.runtimeKey : null;
 
   // PT eligible: package supports tracker AND (premium owner/buyer, or owns this
   // package's role, or is buying this package now).
@@ -48,8 +50,43 @@ export default function Shop() {
     return p && p.tracker && (ownsPremium || owns.includes(id) || buyingIds.has(id));
   };
 
-  const add = (item) => setBasket((b) => [...b, item]);
-  const remove = (i) => setBasket((b) => b.filter((_, idx) => idx !== i));
+  const add = (raw) => setBasket((b) => {
+    let item = raw;
+    let next = [...b];
+
+    if (item.kind === 'package' && item.pkgId === 'premium') {
+      // Premium = all analysis packages → remove the individual analysis packages
+      next = next.filter((x) => !(x.kind === 'package' && x.pkgId !== 'premium'));
+    }
+    if (item.kind === 'package' && item.pkgId !== 'premium') {
+      if (next.some((x) => x.kind === 'package' && x.pkgId === 'premium')) return next; // already covered
+      if (next.some((x) => x.kind === 'package' && x.pkgId === item.pkgId)) return next; // no duplicate
+    }
+    if (item.kind === 'premiumplus') {
+      if (next.some((x) => x.kind === 'premiumplus')) return next;
+      // Premium+ = tracker for all → drop individual trackers
+      next = next.map((x) => (x.kind === 'package' ? { ...x, withTracker: false } : x))
+        .filter((x) => x.kind !== 'trackerOnly');
+      // duration must match the Premium package if it is in the cart
+      const prem = next.find((x) => x.kind === 'package' && x.pkgId === 'premium');
+      if (prem) item = { ...item, runtimeKey: prem.runtimeKey };
+    }
+    if (item.kind === 'trackerOnly') {
+      if (next.some((x) => x.kind === 'premiumplus')) return next; // covered by Premium+
+      if (next.some((x) => x.kind === 'trackerOnly' && x.pkgId === item.pkgId)) return next;
+    }
+    return [...next, item];
+  });
+
+  const remove = (i) => setBasket((b) => {
+    const target = b[i];
+    let next = b.filter((_, idx) => idx !== i);
+    // removing Premium also removes Premium+ (it depends on Premium)
+    if (target && target.kind === 'package' && target.pkgId === 'premium') {
+      next = next.filter((x) => x.kind !== 'premiumplus');
+    }
+    return next;
+  });
 
   const lineItems = basket.flatMap((b, bi) => {
     const rt = runtimeByKey(b.runtimeKey);
@@ -107,7 +144,10 @@ export default function Shop() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {cat.packages.map((p, i) => (
             <PackageCard key={p.id} index={i} pkg={p} trackerPrice={cat.tracker.perPackage}
-              allowTracker={p.tracker && !hasPremiumPlus} onAdd={add} />
+              allowTracker={p.tracker && !hasPremiumPlus}
+              inCart={buyingIds.has(p.id)}
+              covered={p.id !== 'premium' && buyingIds.has('premium')}
+              onAdd={add} />
           ))}
         </div>
 
@@ -127,7 +167,7 @@ export default function Shop() {
         )}
 
         <PremiumPlusCard price={cat.tracker.premiumPlus} enabled={ownsPremium}
-          active={hasPremiumPlus} onAdd={add} />
+          active={hasPremiumPlus} lockedRuntime={premiumRuntimeKey} onAdd={add} />
 
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
@@ -255,11 +295,13 @@ export default function Shop() {
   );
 }
 
-function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, onAdd }) {
+function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, covered, onAdd }) {
   const [rtKey, setRtKey] = useState('1M');
   const [tracker, setTracker] = useState(false);
   const price = pkg.prices[rtKey];
   const soon = price == null || price === '';
+  const disabled = soon || inCart || covered;
+  const label = inCart ? 'In cart' : covered ? 'Included in Premium' : 'Add';
 
   return (
     <motion.div className="card"
@@ -267,13 +309,13 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, onAdd }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.55, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
       whileHover={{ y: -6, transition: { type: 'spring', stiffness: 320, damping: 22 } }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: pkg.highlight ? 'var(--vsx-gold-2)' : 'var(--vsx-line)', boxShadow: pkg.highlight ? 'var(--glow-gold)' : undefined }}>
+      style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: pkg.highlight ? 'var(--vsx-gold-2)' : 'var(--vsx-line)', boxShadow: pkg.highlight ? 'var(--glow-gold)' : undefined, opacity: covered ? 0.6 : 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <h3 style={{ fontSize: 19 }}>{pkg.name}</h3>
         {pkg.highlight && <span className="tag gold">Premium</span>}
       </div>
       <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: 0, minHeight: 34 }}>{pkg.desc}</p>
-      <select value={rtKey} onChange={(e) => setRtKey(e.target.value)}>
+      <select value={rtKey} onChange={(e) => setRtKey(e.target.value)} disabled={disabled}>
         {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
       </select>
       <AnimatePresence mode="wait">
@@ -284,14 +326,14 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, onAdd }) {
           {soon ? 'Coming soon' : fmt(price)}
         </motion.div>
       </AnimatePresence>
-      {allowTracker && (
+      {allowTracker && !inCart && !covered && (
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
           + Portfolio Tracker ({fmt(trackerPrice)}/mo)
         </label>
       )}
-      <motion.button className="btn" disabled={soon} whileTap={{ scale: 0.96 }}
-        onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>Add</motion.button>
+      <motion.button className="btn" disabled={disabled} whileTap={{ scale: 0.96 }}
+        onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>{label}</motion.button>
     </motion.div>
   );
 }
@@ -313,24 +355,28 @@ function OwnedTrackerRow({ pkg, price, onAdd }) {
   );
 }
 
-function PremiumPlusCard({ price, enabled, active, onAdd }) {
+function PremiumPlusCard({ price, enabled, active, lockedRuntime, onAdd }) {
   const [rtKey, setRtKey] = useState('1M');
+  const effectiveKey = lockedRuntime || rtKey;
+  const locked = !!lockedRuntime;
   return (
     <div className="card" style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)', opacity: enabled ? 1 : 0.6 }}>
       <div>
         <p className="eyebrow">Add-on</p>
         <h3 style={{ fontSize: 19, marginTop: 4 }}>Premium+ · Portfolio Tracker</h3>
         <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
-          {enabled
-            ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`
-            : 'Requires Premium — own the Premium role or add Premium to your cart.'}
+          {!enabled
+            ? 'Requires Premium — own the Premium role or add Premium to your cart.'
+            : locked
+              ? `Matches your Premium runtime (${runtimeByKey(effectiveKey).label}) — ${fmt(price)}/mo.`
+              : `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`}
         </p>
       </div>
       <div style={{ textAlign: 'right' }}>
-        <select value={rtKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled}>
+        <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled || locked}>
           {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
-        <button className="btn" disabled={!enabled || active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: rtKey })}>
+        <button className="btn" disabled={!enabled || active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
           {active ? 'In cart' : 'Add'}
         </button>
       </div>
