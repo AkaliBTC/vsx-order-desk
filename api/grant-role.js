@@ -89,16 +89,23 @@ export default async function handler(req, res) {
           const sId = typeof svc === 'string' ? '' : svc.id;
           const pingUser = PING_USER[sId] || '';
           const name = chanName(`${sName} ${userTag || userId}`);
-          const overwrites = [
+          const baseOverwrites = [
             { id: GUILD(), type: 0, deny: String(VIEW) },        // @everyone hidden
             { id: userId, type: 1, allow: String(VIEW) },        // customer can see
             ...modRoles.map((rid) => ({ id: rid, type: 0, allow: String(VIEW) })), // team can see
-            ...(pingUser ? [{ id: pingUser, type: 1, allow: String(VIEW) }] : []),  // responsible coach
           ];
-          const r = await fetch(`${API}/guilds/${GUILD()}/channels`, {
+          const coachOverwrite = pingUser ? [{ id: pingUser, type: 1, allow: String(VIEW) }] : [];
+
+          const createChannel = (overwrites) => fetch(`${API}/guilds/${GUILD()}/channels`, {
             method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, type: 0, parent_id: cat, permission_overwrites: overwrites }),
           });
+
+          // Try with the coach's channel access; if Discord rejects it (e.g. the coach
+          // user can't be added as an overwrite), fall back to creating without it.
+          let r = await createChannel([...baseOverwrites, ...coachOverwrite]);
+          if (!r.ok && coachOverwrite.length) r = await createChannel(baseOverwrites);
+
           if (r.ok) {
             const ch = await r.json();
             channels.push(name);
@@ -107,15 +114,20 @@ export default async function handler(req, res) {
               `Hey <@${userId}> 👋 — thank you for your trust and your payment for **${sName}**! 🤍\n\n` +
               `${ping} will reach out to you right here in just a moment to get everything started. ` +
               `Feel free to drop any details, goals or questions in the meantime so we can hit the ground running. ⭐`;
-            await fetch(`${API}/channels/${ch.id}/messages`, {
+            const m = await fetch(`${API}/channels/${ch.id}/messages`, {
               method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 content,
                 allowed_mentions: { users: pingUser ? [userId, pingUser] : [userId] },
               }),
-            }).catch(() => {});
+            }).catch(() => null);
+            if (!m || !m.ok) {
+              const detail = m ? await m.text().catch(() => '') : 'network';
+              channelErrors.push(`${sName} message (${m ? m.status : 'net'} ${detail.slice(0, 120)})`);
+            }
           } else {
-            channelErrors.push(`${sName} (discord ${r.status})`);
+            const detail = await r.text().catch(() => '');
+            channelErrors.push(`${sName} channel (discord ${r.status} ${detail.slice(0, 120)})`);
           }
         }
       }
