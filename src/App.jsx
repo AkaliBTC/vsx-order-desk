@@ -8,16 +8,13 @@ function Header() {
   const { user, logout } = useAuth();
   if (!user) return null; // clean, full-screen login — no header button
   return (
-    <header style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '22px 24px', maxWidth: 1080, margin: '0 auto',
-    }}>
-      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <header className="app-header">
+      <Link to="/" className="app-brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <img src="/logo.png" alt="VisionX" height={34} style={{ display: 'block' }} />
         <span className="display" style={{ fontSize: 26, color: 'var(--vsx-gold)' }}>VISIONX</span>
-        <span className="eyebrow">Order Desk</span>
+        <span className="eyebrow hide-sm">Order Desk</span>
       </Link>
-      <nav style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <nav style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {user.isAdmin
           ? <span className="tag gold">Admin</span>
           : user.isMod ? <span className="tag" style={{ color: '#7aa2f7', borderColor: '#34406b' }}>Moderator</span> : null}
@@ -28,7 +25,7 @@ function Header() {
           <img src={user.avatar} alt="" width={28} height={28}
             style={{ borderRadius: '50%', border: '1px solid var(--vsx-line)' }} />
         )}
-        <span className="mono" style={{ fontSize: 13 }}>{user.tag}</span>
+        <span className="mono hide-sm" style={{ fontSize: 13 }}>{user.tag}</span>
         <button className="btn-ghost" onClick={logout}>Logout</button>
       </nav>
     </header>

@@ -1,6 +1,23 @@
 // Läuft komplett im Browser — wie das Webhook-Posting im Position Tracker.
 const WEBHOOK_TICKETS = import.meta.env.VITE_WEBHOOK_TICKETS;
 const WEBHOOK_ARCHIVE = import.meta.env.VITE_WEBHOOK_ARCHIVE;
+const WEBHOOK_PAYHINT = import.meta.env.VITE_WEBHOOK_PAYHINT;
+
+// Pings @here in the staff channel the moment a customer reports a payment.
+export async function postPayHint({ id, userTag, method, paid }) {
+  if (!WEBHOOK_PAYHINT) return;
+  const m = method === 'trc20' ? 'USDT · TRC20' : method === 'paypal' ? 'PayPal' : (method || '—');
+  const content =
+    `@here 💸 **Payment reported**\n` +
+    `• **Name:** ${userTag}\n` +
+    `• **Ticket:** #${String(id).slice(0, 6)}\n` +
+    `• **Method:** ${m}\n` +
+    `• **Paid:** ${paid ? '✅ Yes' : '⏳ Pending confirmation'}`;
+  await fetch(WEBHOOK_PAYHINT, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, allowed_mentions: { parse: ['everyone'] } }),
+  }).catch(() => {});
+}
 const USDT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 
 export async function postTicketEmbed(ticket) {

@@ -6,7 +6,7 @@ import { db } from '../firebase';
 import { useAuth } from '../auth';
 import { useCatalogue } from '../catalogue';
 import { postTicketEmbed } from '../lib';
-import { RUNTIMES, DISCLAIMERS, runtimeByKey, fmt } from '../data';
+import { RUNTIMES, DISCLAIMERS, DISCLAIMER_PDF, runtimeByKey, fmt } from '../data';
 
 export default function Shop() {
   const { user } = useAuth();
@@ -151,7 +151,7 @@ export default function Shop() {
   );
 
   return (
-    <div className="shell" style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 28, alignItems: 'start' }}>
+    <div className="shell cols-main">
       <section>
         <p className="eyebrow rise">Catalog</p>
         <h1 className="rise" style={{ fontSize: 32, margin: '8px 0 14px', animationDelay: '.06s' }}>Analysis Packages</h1>
@@ -163,7 +163,7 @@ export default function Shop() {
           {cat.freebies.map((f, i) => <div key={i} style={{ fontSize: 14 }}>★ {f}</div>)}
         </motion.div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="cols-2">
           {cat.packages.map((p, i) => (
             <PackageCard key={p.id} index={i} pkg={p} trackerPrice={cat.tracker.perPackage}
               allowTracker={p.tracker && !hasPremiumPlus}
@@ -194,7 +194,7 @@ export default function Shop() {
 
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div className="cols-2">
           {cat.services.map((s, i) => (
             <motion.div key={s.id} className="card"
               initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }}
@@ -221,7 +221,7 @@ export default function Shop() {
       </section>
 
       <aside>
-        <div className="card" style={{ position: 'sticky', top: 24 }}>
+        <div className="card cart-aside" style={{ position: 'sticky', top: 24 }}>
           <p className="eyebrow">Cart</p>
           {lineItems.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 14 }}>Empty. Add packages or services.</p>}
           <AnimatePresence initial={false}>
@@ -460,7 +460,12 @@ function ConsentModal({ discKeys, total, onClose, onConfirm }) {
           {discKeys.map((k, i) => (
             <label key={k} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--vsx-charcoal-3)', padding: 14, borderRadius: 8, cursor: 'pointer' }}>
               <input type="checkbox" style={{ width: 18, marginTop: 3 }} checked={!!checked[i]} onChange={(e) => setChecked((c) => ({ ...c, [i]: e.target.checked }))} />
-              <span style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>{DISCLAIMERS[k]}</span>
+              <span style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>
+                {DISCLAIMERS[k]}
+                {DISCLAIMER_PDF[k] && (
+                  <> <a href={DISCLAIMER_PDF[k]} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--vsx-gold)', whiteSpace: 'nowrap' }}>Read full terms (PDF) ↗</a></>
+                )}
+              </span>
             </label>
           ))}
         </div>

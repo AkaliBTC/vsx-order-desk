@@ -7,7 +7,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../auth';
 import { PAYMENT, fmt } from '../data';
-import { postProofImage } from '../lib';
+import { postProofImage, postPayHint } from '../lib';
 
 export default function Ticket() {
   const { id } = useParams();
@@ -20,7 +20,7 @@ export default function Ticket() {
   if (ticket === null) return <div className="shell" style={{ paddingTop: 40 }}>Ticket not found.</div>;
 
   return (
-    <div className="shell" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 28, alignItems: 'start' }}>
+    <div className="shell cols-ticket">
       <div style={{ display: 'grid', gap: 20 }}>
         <Summary ticket={ticket} />
         <Payment ticket={ticket} />
@@ -148,6 +148,7 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
       'payment.proofSent': !!file,
       'payment.markedPaidAt': serverTimestamp(),
     });
+    try { await postPayHint({ id: ticket.id, userTag: ticket.userTag, method: p.method, paid: false }); } catch (_) {}
   };
 
   return (
@@ -222,7 +223,7 @@ export function Chat({ ticket, user }) {
   };
 
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 560, position: 'sticky', top: 24 }}>
+    <div className="card cart-aside" style={{ display: 'flex', flexDirection: 'column', height: 560, position: 'sticky', top: 24 }}>
       <p className="eyebrow">Ticket chat</p>
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, margin: '12px 0' }}>
         {messages.map((m) => {

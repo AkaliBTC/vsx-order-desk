@@ -28,16 +28,27 @@ export const DISCLAIMERS = {
     'structure and scenarios, never directives. Past performance is not indicative of future ' +
     'results. You make all trading decisions at your own risk.',
   tracker:
-    'The Portfolio Tracker is a tool for personal record-keeping and does not constitute ' +
-    'investment advice.',
+    'I acknowledge the VisionX Position Tracker Disclaimer & Terms: it is a transparency / ' +
+    'track-record tool showing VisionX\u2019s own positions — not investment advice and not ' +
+    'signals to copy. Figures are indicative, past performance is not indicative of future ' +
+    'results, and any use is at my own risk.',
   deepdive:
-    'This report is for informational purposes only and does not constitute investment advice.',
+    'I acknowledge the VisionX Deep Dive Disclaimer & Terms: the analysis is informational / ' +
+    'educational only and not investment advice (MiFID II / WpHG). It is opinion, not a ' +
+    'recommendation, with no guarantee of results. All sales are final and non-refundable, ' +
+    'redistribution is prohibited, and my decisions are at my own risk.',
   coaching:
     'Coaching conveys methodology and tools. It does not replace individual financial advice. ' +
     'Trades you execute are at your own risk.',
   voucher:
     'Gift vouchers are non-refundable, cannot be exchanged for cash, and are single-use. ' +
     'Keep your code private — do not share or forward it.',
+};
+
+// Full legal documents (PDF) linked next to the consent checkbox where available.
+export const DISCLAIMER_PDF = {
+  deepdive: '/VisionX_DeepDive_Disclaimer.pdf',
+  tracker: '/VisionX_PositionTracker_Disclaimer.pdf',
 };
 
 // ----- DEFAULT catalogue (seed) ----------------------------------------

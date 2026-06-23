@@ -46,7 +46,7 @@ function Tickets({ user }) {
   const active = tickets.find((t) => t.id === selected);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
+    <div className="cols-admin">
       <aside className="card" style={{ position: 'sticky', top: 24 }}>
         <p className="eyebrow">Open tickets</p>
         <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
