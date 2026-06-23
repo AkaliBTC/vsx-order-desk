@@ -71,8 +71,27 @@ export default async function handler(req, res) {
 
   // 2) Slash command.
   if (body.type === 2) {
-    const userId = body.member?.user?.id || body.user?.id;
-    let text = 'You have no active VisionX subscriptions right now. \uD83E\uDD0D';
+    const invokerId = body.member?.user?.id || body.user?.id;
+    const invokerRoles = body.member?.roles || [];
+    const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const adminRole = (process.env.DISCORD_ADMIN_ROLE_ID || '').trim();
+    const isStaff = invokerRoles.some((r) => modRoles.includes(r)) || (!!adminRole && invokerRoles.includes(adminRole));
+
+    const opt = (body.data?.options || []).find((o) => o.name === 'user');
+    let userId = invokerId;
+    let who = 'Your';
+    let whoNo = 'You have';
+    if (opt && opt.value && isStaff) {
+      userId = opt.value;
+      const u = body.data?.resolved?.users?.[opt.value];
+      const name = u ? (u.global_name || u.username) : opt.value;
+      who = `${name}\u2019s`;
+      whoNo = `${name} has`;
+    } else if (opt && opt.value && !isStaff) {
+      return res.status(200).json({ type: 4, data: { content: 'Only the team can look up other members. Run `/subscription` without a user to see your own. \uD83E\uDD0D', flags: 64 } });
+    }
+
+    let text = `${whoNo} no active VisionX subscriptions right now. \uD83E\uDD0D`;
     try {
       const db = getAdmin().firestore();
       const snap = await db.collection('entitlements').where('userId', '==', userId).get();
@@ -86,11 +105,11 @@ export default async function handler(req, res) {
           const date = new Date(e.expiresAt.toMillis()).toISOString().slice(0, 10);
           return `\u2022 **${e.label || 'Role'}** \u2014 ${days} day${days === 1 ? '' : 's'} left (until ${date})`;
         });
-      if (lines.length) text = `**Your VisionX subscriptions** \uD83E\uDD0D\n${lines.join('\n')}`;
+      if (lines.length) text = `**${who} VisionX subscriptions** \uD83E\uDD0D\n${lines.join('\n')}`;
     } catch (e) {
-      text = 'Could not look up your subscriptions right now \u2014 please try again shortly.';
+      text = 'Could not look up subscriptions right now \u2014 please try again shortly.';
     }
-    return res.status(200).json({ type: 4, data: { content: text, flags: 64 } }); // 64 = ephemeral
+    return res.status(200).json({ type: 4, data: { content: text, flags: 64, allowed_mentions: { parse: [] } } }); // ephemeral, no pings
   }
 
   return res.status(200).json({ type: 4, data: { content: 'Unsupported interaction.', flags: 64 } });

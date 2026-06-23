@@ -38,7 +38,7 @@ export default function Shop() {
         const d = snap.data();
         if (d.active === false) { setCodeError('Code is inactive.'); return; }
         if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) { setCodeError('Code expired.'); return; }
-        setApplied({ type: 'percent', code, percent: Number(d.percent) });
+        setApplied({ type: 'percent', code, percent: Number(d.percent), scope: Array.isArray(d.scope) ? d.scope : [] });
         return;
       }
       setCodeError('Code not found.');
@@ -138,9 +138,15 @@ export default function Shop() {
   const loyaltyOff = user.loyalty ? Math.round(analysisSubtotal * 10) / 100 : 0; // 10% on analysis only
   const afterLoyalty = total0 - loyaltyOff;
   // codes & vouchers never discount a gift-voucher purchase itself
-  const discountBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
-  const codeOff = applied?.type === 'percent' ? Math.round(discountBase * applied.percent) / 100 : 0;
-  const voucherOff = applied?.type === 'voucher' ? Math.min(applied.amount, discountBase) : 0;
+  // A percent code may be scoped to certain product categories (empty scope = all).
+  const codeScope = applied?.type === 'percent' ? (applied.scope || []) : [];
+  const inScope = (x) => x.disc !== 'voucher' && (codeScope.length === 0 || codeScope.includes(x.disc));
+  const codeBase = applied?.type === 'percent'
+    ? lineItems.filter(inScope).reduce((s, x) => s + ((x.disc === 'analysis' && user.loyalty) ? x.price * 0.9 : x.price), 0)
+    : 0;
+  const codeOff = applied?.type === 'percent' ? Math.round(codeBase * applied.percent) / 100 : 0;
+  const voucherBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
+  const voucherOff = applied?.type === 'voucher' ? Math.min(applied.amount, voucherBase) : 0;
   const total = +(afterLoyalty - codeOff - voucherOff).toFixed(2);
   const discKeys = [...new Set(lineItems.map((x) => x.disc))];
 
@@ -263,7 +269,9 @@ export default function Shop() {
                 {applied ? (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                     <span className="mono" style={{ color: 'var(--vsx-gold)' }}>
-                      {applied.code} {applied.type === 'voucher' ? `(${fmt(applied.amount)} voucher)` : `(−${applied.percent}%)`}
+                      {applied.code} {applied.type === 'voucher'
+                        ? `(${fmt(applied.amount)} voucher)`
+                        : `(−${applied.percent}%${(applied.scope && applied.scope.length) ? ' · ' + applied.scope.map((s) => ({ analysis: 'Analysis', tracker: 'Tracker', deepdive: 'Deep Dive', coaching: 'Coaching' }[s] || s)).join(', ') : ''})`}
                     </span>
                     <button onClick={() => { setApplied(null); setCodeInput(''); }} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>remove</button>
                   </div>
@@ -322,7 +330,7 @@ export default function Shop() {
               userId: user.uid, userTag: user.tag, userAvatar: user.avatar,
               items, total,
               grants, services, voucherPurchases,
-              discount: applied?.type === 'percent' ? { code: applied.code, percent: applied.percent } : null,
+              discount: applied?.type === 'percent' ? { code: applied.code, percent: applied.percent, scope: applied.scope || [] } : null,
               redeemedVoucher: applied?.type === 'voucher' ? applied.code : null,
               loyalty: loyaltyOff > 0,
               consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },

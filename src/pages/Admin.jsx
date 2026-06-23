@@ -21,14 +21,18 @@ export default function Admin() {
   const [view, setView] = useState('tickets');
   return (
     <div className="shell">
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         <button className={view === 'tickets' ? 'btn' : 'btn-ghost'} onClick={() => setView('tickets')}>Tickets</button>
         <button className={view === 'catalogue' ? 'btn' : 'btn-ghost'} onClick={() => setView('catalogue')}>Catalogue</button>
         <button className={view === 'discounts' ? 'btn' : 'btn-ghost'} onClick={() => setView('discounts')}>Discounts</button>
+        <button className={view === 'vouchers' ? 'btn' : 'btn-ghost'} onClick={() => setView('vouchers')}>Vouchers</button>
+        <button className={view === 'subs' ? 'btn' : 'btn-ghost'} onClick={() => setView('subs')}>Subscriptions</button>
       </div>
       {view === 'tickets' && <Tickets user={user} />}
       {view === 'catalogue' && <CatalogueEditor />}
       {view === 'discounts' && <DiscountsEditor />}
+      {view === 'vouchers' && <VouchersManager />}
+      {view === 'subs' && <SubscriptionsManager />}
     </div>
   );
 }
@@ -368,14 +372,18 @@ function CatalogueEditor() {
 
 /* --------------------------- Discounts editor ------------------------- */
 function DiscountsEditor() {
+  const CATS = [['analysis', 'Analysis'], ['tracker', 'Tracker'], ['deepdive', 'Deep Dive'], ['coaching', 'Coaching']];
   const [codes, setCodes] = useState([]);
   const [code, setCode] = useState('');
   const [percent, setPercent] = useState(10);
   const [expiry, setExpiry] = useState('');
+  const [scope, setScope] = useState([]);
   const [err, setErr] = useState('');
 
   useEffect(() => onSnapshot(collection(db, 'discounts'),
     (s) => setCodes(s.docs.map((d) => ({ id: d.id, ...d.data() })))), []);
+
+  const toggle = (k) => setScope((sc) => sc.includes(k) ? sc.filter((x) => x !== k) : [...sc, k]);
 
   const addCode = async () => {
     const id = code.trim().toUpperCase();
@@ -385,16 +393,18 @@ function DiscountsEditor() {
     try {
       await setDoc(doc(db, 'discounts', id), {
         percent: Number(percent),
+        scope, // empty = applies to everything (except gift-voucher purchases)
         expiresAt: expiry ? Timestamp.fromDate(new Date(expiry + 'T23:59:59')) : null,
         active: true,
         createdAt: serverTimestamp(),
       });
-      setCode(''); setPercent(10); setExpiry('');
+      setCode(''); setPercent(10); setExpiry(''); setScope([]);
     } catch (e) { setErr(e.message); }
   };
 
   const inp = { marginTop: 4 };
   const lbl = { fontSize: 11, color: 'var(--vsx-muted)', display: 'block' };
+  const catLabel = (k) => (CATS.find((c) => c[0] === k) || [k, k])[1];
 
   return (
     <div style={{ display: 'grid', gap: 18, maxWidth: 720 }}>
@@ -402,15 +412,28 @@ function DiscountsEditor() {
         <p className="eyebrow">Discounts</p>
         <h2 style={{ fontSize: 24 }}>Discount codes</h2>
         <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>
-          Codes apply a percentage off the whole cart at checkout. Leave the date empty for no expiry.
+          Codes apply a percentage off at checkout. Pick which products a code applies to —
+          leave all unchecked to apply it to the whole cart. Leave the date empty for no expiry.
         </p>
       </div>
 
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr auto', gap: 12, alignItems: 'end' }}>
-        <div><label style={lbl}>Code</label><input style={{ ...inp, textTransform: 'uppercase' }} value={code} onChange={(e) => setCode(e.target.value)} placeholder="WELCOME10" /></div>
-        <div><label style={lbl}>Percent (%)</label><input style={inp} type="number" value={percent} onChange={(e) => setPercent(e.target.value)} /></div>
-        <div><label style={lbl}>Expires (optional)</label><input style={inp} type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
-        <button className="btn" onClick={addCode}>Add</button>
+      <div className="card" style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr auto', gap: 12, alignItems: 'end' }}>
+          <div><label style={lbl}>Code</label><input style={{ ...inp, textTransform: 'uppercase' }} value={code} onChange={(e) => setCode(e.target.value)} placeholder="WELCOME10" /></div>
+          <div><label style={lbl}>Percent (%)</label><input style={inp} type="number" value={percent} onChange={(e) => setPercent(e.target.value)} /></div>
+          <div><label style={lbl}>Expires (optional)</label><input style={inp} type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
+          <button className="btn" onClick={addCode}>Add</button>
+        </div>
+        <div>
+          <label style={lbl}>Applies to (none = whole cart)</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 6 }}>
+            {CATS.map(([k, label]) => (
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                <input type="checkbox" style={{ width: 16 }} checked={scope.includes(k)} onChange={() => toggle(k)} /> {label}
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
       {err && <p style={{ color: 'var(--vsx-err)', fontSize: 13 }}>{err}</p>}
 
@@ -420,15 +443,180 @@ function DiscountsEditor() {
         {codes.map((c) => {
           const exp = c.expiresAt ? new Date(c.expiresAt.toMillis()) : null;
           const expired = exp && exp.getTime() < Date.now();
+          const sc = Array.isArray(c.scope) && c.scope.length ? c.scope.map(catLabel).join(', ') : 'Whole cart';
           return (
             <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
               <div>
                 <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{c.id}</span>
                 <span className="mono" style={{ color: 'var(--vsx-muted)', fontSize: 12, marginLeft: 10 }}>
-                  −{c.percent}% · {exp ? `until ${exp.toLocaleDateString()}` : 'no expiry'}{expired ? ' · EXPIRED' : ''}
+                  −{c.percent}% · {sc} · {exp ? `until ${exp.toLocaleDateString()}` : 'no expiry'}{expired ? ' · EXPIRED' : ''}
                 </span>
               </div>
               <button onClick={() => deleteDoc(doc(db, 'discounts', c.id))} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>delete</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Gift voucher management ----------
+function VouchersManager() {
+  const [list, setList] = useState([]);
+  useEffect(() => onSnapshot(collection(db, 'vouchers'),
+    (s) => setList(s.docs.map((d) => ({ code: d.id, ...d.data() })))), []);
+
+  const deactivate = async (code) => {
+    if (!confirm(`Deactivate voucher ${code}? It can no longer be redeemed.`)) return;
+    try { await setDoc(doc(db, 'vouchers', code), { used: true, usedAt: serverTimestamp() }, { merge: true }); }
+    catch (e) { alert('Failed: ' + e.message); }
+  };
+  const remove = async (code) => {
+    if (!confirm(`Delete voucher ${code} permanently?`)) return;
+    try { await deleteDoc(doc(db, 'vouchers', code)); } catch (e) { alert('Failed: ' + e.message); }
+  };
+
+  const sorted = [...list].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  return (
+    <div style={{ display: 'grid', gap: 18, maxWidth: 760 }}>
+      <div>
+        <p className="eyebrow">Vouchers</p>
+        <h2 style={{ fontSize: 24 }}>Issued gift vouchers</h2>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>Every voucher ever generated. Deactivate to block redemption, or delete to remove it entirely.</p>
+      </div>
+      <div className="card">
+        {sorted.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No vouchers issued yet.</p>}
+        {sorted.map((v) => {
+          const exp = v.expiresAt ? new Date(v.expiresAt.toMillis()) : null;
+          const expired = exp && exp.getTime() < Date.now();
+          const status = v.used ? 'USED / OFF' : expired ? 'EXPIRED' : 'ACTIVE';
+          const color = v.used || expired ? 'var(--vsx-muted)' : 'var(--vsx-ok)';
+          return (
+            <div key={v.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
+              <div style={{ minWidth: 0 }}>
+                <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{v.code}</span>
+                <span className="mono" style={{ fontSize: 12, marginLeft: 10 }}>{fmt(Number(v.amount) || 0)}</span>
+                <span className="mono" style={{ fontSize: 12, marginLeft: 10, color }}>{status}</span>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>
+                  buyer {v.buyerId || '—'}{exp ? ` · until ${exp.toLocaleDateString()}` : ''}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+                {!v.used && <button onClick={() => deactivate(v.code)} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>deactivate</button>}
+                <button onClick={() => remove(v.code)} style={{ background: 'none', color: 'var(--vsx-err)', fontSize: 12, padding: 0 }}>delete</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Subscription (role) management ----------
+function SubscriptionsManager() {
+  const [ents, setEnts] = useState([]);
+  const [cat, setCat] = useState(DEFAULT_CATALOGUE);
+  const [uid, setUid] = useState('');
+  const [roleIdx, setRoleIdx] = useState('0');
+  const [rtKey, setRtKey] = useState('1M');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => onSnapshot(collection(db, 'entitlements'),
+    (s) => setEnts(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (e) => setMsg('Cannot read subscriptions: ' + e.code)), []);
+  useEffect(() => { (async () => {
+    try { const sn = await getDoc(doc(db, 'config', 'catalogue')); if (sn.exists()) setCat(sn.data()); } catch (_) {}
+  })(); }, []);
+
+  const roleOptions = [];
+  (cat.packages || []).forEach((p) => {
+    if (p.roleId) roleOptions.push({ label: p.name, roleId: p.roleId });
+    if (p.ptRoleId) roleOptions.push({ label: `${p.name} · Tracker`, roleId: p.ptRoleId });
+  });
+  if (cat.premiumPlusRoleId) roleOptions.push({ label: 'Premium+ · Tracker', roleId: cat.premiumPlusRoleId });
+  if (cat.loyaltyRoleId) roleOptions.push({ label: 'Loyalty', roleId: cat.loyaltyRoleId });
+
+  const call = async (payload) => {
+    const idToken = await auth.currentUser.getIdToken();
+    const r = await fetch('/api/manage-sub', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    return d;
+  };
+
+  const add = async () => {
+    setMsg('');
+    const userId = uid.trim();
+    const opt = roleOptions[Number(roleIdx)];
+    if (!userId) { setMsg('Enter a Discord user ID.'); return; }
+    if (!opt) { setMsg('Pick a role.'); return; }
+    const months = (RUNTIMES.find((r) => r.key === rtKey) || { months: 1 }).months;
+    setBusy(true);
+    try {
+      await call({ action: 'add', userId, roleId: opt.roleId, label: opt.label, months });
+      setUid(''); setMsg(`✓ Granted ${opt.label} to ${userId} for ${months} month(s).`);
+    } catch (e) { setMsg('Failed: ' + e.message); }
+    setBusy(false);
+  };
+
+  const remove = async (e) => {
+    if (!confirm(`Remove ${e.label || 'role'} from ${e.userId}? The Discord role is taken away immediately.`)) return;
+    setMsg('');
+    setBusy(true);
+    try { await call({ action: 'remove', id: e.id, userId: e.userId, roleId: e.roleId }); setMsg('✓ Removed.'); }
+    catch (err) { setMsg('Failed: ' + err.message); }
+    setBusy(false);
+  };
+
+  const inp = { marginTop: 4 };
+  const lbl = { fontSize: 11, color: 'var(--vsx-muted)', display: 'block' };
+  const sorted = [...ents].filter((e) => e.expiresAt).sort((a, b) => a.expiresAt.toMillis() - b.expiresAt.toMillis());
+
+  return (
+    <div style={{ display: 'grid', gap: 18, maxWidth: 820 }}>
+      <div>
+        <p className="eyebrow">Subscriptions</p>
+        <h2 style={{ fontSize: 24 }}>Active subscriptions</h2>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>Grant or remove a role + its expiry manually. Removing takes the Discord role away immediately.</p>
+      </div>
+
+      <div className="card" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr 1fr auto', gap: 12, alignItems: 'end' }}>
+        <div><label style={lbl}>Discord user ID</label><input style={inp} value={uid} onChange={(e) => setUid(e.target.value)} placeholder="123456789012345678" /></div>
+        <div><label style={lbl}>Role</label>
+          <select style={inp} value={roleIdx} onChange={(e) => setRoleIdx(e.target.value)}>
+            {roleOptions.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
+          </select>
+        </div>
+        <div><label style={lbl}>Duration</label>
+          <select style={inp} value={rtKey} onChange={(e) => setRtKey(e.target.value)}>
+            {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </select>
+        </div>
+        <button className="btn" disabled={busy} onClick={add}>Grant</button>
+      </div>
+      {msg && <p style={{ fontSize: 13, color: msg.startsWith('✓') ? 'var(--vsx-ok)' : 'var(--vsx-err)' }}>{msg}</p>}
+
+      <div className="card">
+        <p className="eyebrow" style={{ marginBottom: 10 }}>Currently active ({sorted.length})</p>
+        {sorted.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No active subscriptions.</p>}
+        {sorted.map((e) => {
+          const ms = e.expiresAt.toMillis() - Date.now();
+          const days = Math.max(0, Math.floor(ms / (24 * 3600 * 1000)));
+          const date = new Date(e.expiresAt.toMillis()).toLocaleDateString();
+          return (
+            <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
+              <div style={{ minWidth: 0 }}>
+                <span style={{ fontWeight: 500 }}>{e.label || 'Role'}</span>
+                <span className="mono" style={{ fontSize: 12, marginLeft: 10, color: 'var(--vsx-gold)' }}>{days}d left</span>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>user {e.userId} · until {date}</div>
+              </div>
+              <button onClick={() => remove(e)} disabled={busy} style={{ background: 'none', color: 'var(--vsx-err)', fontSize: 12, padding: 0 }}>remove</button>
             </div>
           );
         })}

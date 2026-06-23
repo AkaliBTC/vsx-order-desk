@@ -19,6 +19,9 @@ export default async function handler(req, res) {
       name: 'subscription',
       description: 'See how long your VisionX roles are still active',
       type: 1,
+      options: [
+        { name: 'user', description: '(Team only) check another member\u2019s subscriptions', type: 6, required: false },
+      ],
     };
 
     const r = await fetch(`${API}/applications/${appId}/guilds/${guildId}/commands`, {
