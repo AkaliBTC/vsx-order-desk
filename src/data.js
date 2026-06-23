@@ -35,6 +35,9 @@ export const DISCLAIMERS = {
   coaching:
     'Coaching conveys methodology and tools. It does not replace individual financial advice. ' +
     'Trades you execute are at your own risk.',
+  voucher:
+    'Gift vouchers are non-refundable, cannot be exchanged for cash, and are single-use. ' +
+    'Keep your code private — do not share or forward it.',
 };
 
 // ----- DEFAULT catalogue (seed) ----------------------------------------

@@ -15,7 +15,7 @@ export default function Shop() {
   const [basket, setBasket] = useState([]);
   const [consentOpen, setConsentOpen] = useState(false);
   const [codeInput, setCodeInput] = useState('');
-  const [applied, setApplied] = useState(null);   // { code, percent }
+  const [applied, setApplied] = useState(null);   // {type:'percent',code,percent} | {type:'voucher',code,amount}
   const [codeError, setCodeError] = useState('');
 
   const applyCode = async () => {
@@ -23,13 +23,25 @@ export default function Shop() {
     setCodeError('');
     if (!code) return;
     try {
+      // 1) gift voucher (fixed $ balance)?
+      const vs = await getDoc(doc(db, 'vouchers', code));
+      if (vs.exists()) {
+        const v = vs.data();
+        if (v.used) { setCodeError('Voucher already used.'); return; }
+        if (v.expiresAt && v.expiresAt.toMillis() < Date.now()) { setCodeError('Voucher expired.'); return; }
+        setApplied({ type: 'voucher', code, amount: Number(v.amount) });
+        return;
+      }
+      // 2) percentage discount code?
       const snap = await getDoc(doc(db, 'discounts', code));
-      if (!snap.exists()) { setCodeError('Code not found.'); return; }
-      const d = snap.data();
-      if (d.active === false) { setCodeError('Code is inactive.'); return; }
-      if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) { setCodeError('Code expired.'); return; }
-      setApplied({ code, percent: Number(d.percent) });
-      setCodeError('');
+      if (snap.exists()) {
+        const d = snap.data();
+        if (d.active === false) { setCodeError('Code is inactive.'); return; }
+        if (d.expiresAt && d.expiresAt.toMillis() < Date.now()) { setCodeError('Code expired.'); return; }
+        setApplied({ type: 'percent', code, percent: Number(d.percent) });
+        return;
+      }
+      setCodeError('Code not found.');
     } catch (e) { setCodeError('Could not validate code.'); }
   };
 
@@ -105,26 +117,33 @@ export default function Shop() {
     if (b.kind === 'premiumplus') {
       return [{ bi, name: `Premium+ · Portfolio Tracker (all) · ${rt.label}`, price: cat.tracker.premiumPlus * rt.months, disc: 'tracker' }];
     }
+    if (b.kind === 'voucher') {
+      return [{ bi, name: `Gift Voucher · ${fmt(b.amount)} balance`, price: Number(b.amount) || 0, disc: 'voucher' }];
+    }
     const s = svcById(b.serviceId);
     return [{ bi, name: `${s.name}${s.unit ? ` ${s.unit}` : ''}`, price: Number(s.price) || 0, disc: s.id === 'deepdive' ? 'deepdive' : 'coaching' }];
   });
 
   const total0 = lineItems.reduce((s, x) => s + x.price, 0);
   const analysisSubtotal = lineItems.filter((x) => x.disc === 'analysis').reduce((s, x) => s + x.price, 0);
+  const voucherPurchaseTotal = lineItems.filter((x) => x.disc === 'voucher').reduce((s, x) => s + x.price, 0);
   const loyaltyOff = user.loyalty ? Math.round(analysisSubtotal * 10) / 100 : 0; // 10% on analysis only
   const afterLoyalty = total0 - loyaltyOff;
-  const codeOff = applied ? Math.round(afterLoyalty * applied.percent) / 100 : 0;
-  const total = +(afterLoyalty - codeOff).toFixed(2);
+  // codes & vouchers never discount a gift-voucher purchase itself
+  const discountBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
+  const codeOff = applied?.type === 'percent' ? Math.round(discountBase * applied.percent) / 100 : 0;
+  const voucherOff = applied?.type === 'voucher' ? Math.min(applied.amount, discountBase) : 0;
+  const total = +(afterLoyalty - codeOff - voucherOff).toFixed(2);
   const discKeys = [...new Set(lineItems.map((x) => x.disc))];
 
   // Discount lines appended to the order (so the ticket + transcript show them).
   const discountLines = [
     ...(loyaltyOff > 0 ? [{ name: 'Loyalty −10% (analysis)', price: -loyaltyOff }] : []),
     ...(codeOff > 0 ? [{ name: `Code ${applied.code} −${applied.percent}%`, price: -codeOff }] : []),
+    ...(voucherOff > 0 ? [{ name: `Voucher ${applied.code}`, price: -voucherOff }] : []),
   ];
 
   // Packages the user can add a standalone tracker for (owns role, not buying now).
-  // Trackers you can add standalone = packages you ACTUALLY own via a Discord role
   // (not packages you're buying right now — Premium in the cart does not count here).
   const ownsPremiumRole = owns.includes('premium');
   const ownedTrackable = hasPremiumPlus ? [] : cat.packages.filter(
@@ -163,7 +182,8 @@ export default function Shop() {
             </p>
             <div style={{ display: 'grid', gap: 10 }}>
               {ownedTrackable.map((p) => (
-                <OwnedTrackerRow key={p.id} pkg={p} price={cat.tracker.perPackage} onAdd={add} />
+                <OwnedTrackerRow key={p.id} pkg={p} price={cat.tracker.perPackage}
+                  maxMonths={premiumInCart ? runtimeByKey(premiumRuntimeKey).months : null} onAdd={add} />
               ))}
             </div>
           </>
@@ -194,6 +214,10 @@ export default function Shop() {
             </motion.div>
           ))}
         </div>
+
+        <p className="eyebrow" style={{ marginTop: 30 }}>Gift</p>
+        <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Gift Voucher</h2>
+        <GiftVoucherCard onAdd={add} />
       </section>
 
       <aside>
@@ -225,10 +249,12 @@ export default function Shop() {
               ))}
 
               <div style={{ marginTop: 12 }}>
-                <p className="eyebrow" style={{ marginBottom: 6 }}>Discount code</p>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>Discount / voucher code</p>
                 {applied ? (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-                    <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{applied.code} (−{applied.percent}%)</span>
+                    <span className="mono" style={{ color: 'var(--vsx-gold)' }}>
+                      {applied.code} {applied.type === 'voucher' ? `(${fmt(applied.amount)} voucher)` : `(−${applied.percent}%)`}
+                    </span>
                     <button onClick={() => { setApplied(null); setCodeInput(''); }} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>remove</button>
                   </div>
                 ) : (
@@ -281,11 +307,13 @@ export default function Shop() {
             const services = basket.filter((b) => b.kind === 'service').map((b) => {
               const s = svcById(b.serviceId); return { id: s.id, name: s.name };
             });
+            const voucherPurchases = basket.filter((b) => b.kind === 'voucher').map((b) => Number(b.amount));
             const ref = await addDoc(collection(db, 'tickets'), {
               userId: user.uid, userTag: user.tag, userAvatar: user.avatar,
               items, total,
-              grants, services,
-              discount: applied ? { code: applied.code, percent: applied.percent } : null,
+              grants, services, voucherPurchases,
+              discount: applied?.type === 'percent' ? { code: applied.code, percent: applied.percent } : null,
+              redeemedVoucher: applied?.type === 'voucher' ? applied.code : null,
               loyalty: loyaltyOff > 0,
               consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },
               payment: { method: null, status: 'unpaid' },
@@ -343,16 +371,19 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, cover
   );
 }
 
-function OwnedTrackerRow({ pkg, price, onAdd }) {
-  const [rtKey, setRtKey] = useState('1M');
+function OwnedTrackerRow({ pkg, price, maxMonths, onAdd }) {
+  const options = maxMonths ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
+  const [rtKey, setRtKey] = useState(options[0].key);
+  // keep selection valid if the cap shrinks
+  const valid = options.some((r) => r.key === rtKey) ? rtKey : options[0].key;
   return (
     <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
       <div style={{ fontWeight: 500 }}>{pkg.name}</div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <select value={rtKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto' }}>
-          {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+        <select value={valid} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto' }}>
+          {options.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
-        <button className="btn-ghost" onClick={() => onAdd({ kind: 'trackerOnly', pkgId: pkg.id, runtimeKey: rtKey })}>
+        <button className="btn-ghost" onClick={() => onAdd({ kind: 'trackerOnly', pkgId: pkg.id, runtimeKey: valid })}>
           Add tracker
         </button>
       </div>
@@ -384,6 +415,30 @@ function PremiumPlusCard({ price, enabled, active, lockedRuntime, onAdd }) {
         <button className="btn" disabled={!enabled || active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
           {active ? 'In cart' : 'Add'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function GiftVoucherCard({ onAdd }) {
+  const [amount, setAmount] = useState('');
+  const val = Number(amount);
+  const ok = val >= 5 && val <= 5000;
+  return (
+    <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)' }}>
+      <div style={{ flex: 1 }}>
+        <h3 style={{ fontSize: 18 }}>Gift Voucher</h3>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
+          Choose any amount. The buyer receives a one-time code (valid 1 year) by Discord DM — perfect to gift to a friend.
+        </p>
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 12, top: 11, color: 'var(--vsx-muted)' }}>$</span>
+          <input type="number" min="5" value={amount} onChange={(e) => setAmount(e.target.value)}
+            placeholder="50" style={{ width: 110, paddingLeft: 22 }} />
+        </div>
+        <button className="btn" disabled={!ok} onClick={() => { onAdd({ kind: 'voucher', amount: val }); setAmount(''); }}>Add</button>
       </div>
     </div>
   );

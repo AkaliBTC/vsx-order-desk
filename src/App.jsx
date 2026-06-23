@@ -17,11 +17,13 @@ function Header() {
         <span className="display" style={{ fontSize: 26, color: 'var(--vsx-gold)' }}>VISIONX</span>
         <span className="eyebrow">Order Desk</span>
       </Link>
-      <nav style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        {user.isMod && <Link to="/admin" className="tag" style={{ borderColor: 'var(--vsx-gold-2)', color: 'var(--vsx-gold)' }}>Dashboard</Link>}
+      <nav style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {user.isAdmin
           ? <span className="tag gold">Admin</span>
           : user.isMod ? <span className="tag" style={{ color: '#7aa2f7', borderColor: '#34406b' }}>Moderator</span> : null}
+        {user.isMod && (
+          <Link to="/admin" className="btn-ghost" style={{ textDecoration: 'none', padding: '8px 16px' }}>⚙ Admin Panel</Link>
+        )}
         {user.avatar && (
           <img src={user.avatar} alt="" width={28} height={28}
             style={{ borderRadius: '50%', border: '1px solid var(--vsx-line)' }} />

@@ -7,6 +7,13 @@ import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { postTranscript, checkTronPayment } from '../lib';
 import { Chat } from './Ticket';
+
+// Readable one-time voucher code, e.g. VSX-7K3M-9QF2 (no ambiguous chars).
+function genVoucherCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const block = () => Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+  return `VSX-${block()}-${block()}`;
+}
 import { PAYMENT, RUNTIMES, fmt, DEFAULT_CATALOGUE } from '../data';
 
 export default function Admin() {
@@ -71,7 +78,7 @@ function AdminDetail({ ticket, modTag, user }) {
   const p = ticket.payment || {};
   const [checking, setChecking] = useState(false);
 
-  const grantRoles = async () => {
+  const grantRoles = async (vouchers = []) => {
     try {
       const idToken = await auth.currentUser.getIdToken();
       const r = await fetch('/api/grant-role', {
@@ -83,6 +90,7 @@ function AdminDetail({ ticket, modTag, user }) {
           userTag: ticket.userTag,
           grants: ticket.grants || [],
           services: ticket.services || [],
+          vouchers,
         }),
       });
       const d = await r.json();
@@ -90,6 +98,8 @@ function AdminDetail({ ticket, modTag, user }) {
       const lines = [];
       if (d.granted?.length) lines.push('Roles granted: ' + d.granted.join(', '));
       if (d.channels?.length) lines.push('Ticket channels: ' + d.channels.join(', '));
+      if (vouchers.length) lines.push('Voucher codes: ' + vouchers.map((v) => v.code).join(', '));
+      if (d.voucherDmFailed) lines.push('⚠ Could not DM the voucher (buyer may have DMs closed) — codes: ' + vouchers.map((v) => v.code).join(', '));
       if (d.failed?.length) lines.push('Roles failed: ' + d.failed.join(', '));
       if (d.channelErrors?.length) lines.push('Channels failed: ' + d.channelErrors.join(', '));
       if (d.expiryWarning) lines.push('Note: auto-expiry not stored (' + d.expiryWarning + ')');
@@ -97,11 +107,35 @@ function AdminDetail({ ticket, modTag, user }) {
     } catch (e) { alert('Fulfillment failed: ' + e.message); }
   };
 
+  // Generate & persist purchased gift vouchers, mark a redeemed voucher used,
+  // then run the Discord fulfillment (roles, channels, voucher DM).
+  const fulfil = async () => {
+    const vouchers = [];
+    for (const amount of (ticket.voucherPurchases || [])) {
+      const code = genVoucherCode();
+      const expiresAt = Timestamp.fromMillis(Date.now() + 365 * 24 * 3600 * 1000);
+      try {
+        await setDoc(doc(db, 'vouchers', code), {
+          amount: Number(amount), expiresAt, used: false,
+          buyerId: ticket.userId, ticketId: ticket.id, createdAt: serverTimestamp(),
+        });
+        vouchers.push({ code, amount: Number(amount) });
+      } catch (e) { alert('Could not create voucher: ' + e.message); }
+    }
+    if (ticket.redeemedVoucher) {
+      try {
+        await setDoc(doc(db, 'vouchers', ticket.redeemedVoucher),
+          { used: true, usedAt: serverTimestamp(), usedTicket: ticket.id }, { merge: true });
+      } catch (e) { /* non-fatal */ }
+    }
+    await grantRoles(vouchers);
+  };
+
   const confirmPayment = async () => {
     await updateDoc(doc(db, 'tickets', ticket.id), {
       status: 'paid', 'payment.status': 'paid', 'payment.confirmedBy': modTag, 'payment.confirmedAt': serverTimestamp(),
     });
-    await grantRoles();
+    await fulfil();
   };
 
   const closeTicket = async () => {
@@ -136,7 +170,7 @@ function AdminDetail({ ticket, modTag, user }) {
           status: 'paid', 'payment.status': 'paid', 'payment.txHash': tx,
           'payment.confirmedBy': 'auto:tron', 'payment.confirmedAt': serverTimestamp(),
         });
-        await grantRoles();
+        await fulfil();
       } else { alert('No matching USDT payment found yet.'); }
     } catch (e) { alert('Check failed: ' + e.message); }
     setChecking(false);

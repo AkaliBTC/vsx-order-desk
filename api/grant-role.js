@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     const decoded = await getAdmin().auth().verifyIdToken(idToken);
     if (decoded.mod !== true) return res.status(403).json({ error: 'not a mod' });
 
-    const { ticketId, userId, userTag, grants = [], services = [] } = req.body || {};
+    const { ticketId, userId, userTag, grants = [], services = [], vouchers = [] } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'no userId' });
 
     const granted = [];
@@ -50,6 +50,7 @@ export default async function handler(req, res) {
     const channels = [];
     const channelErrors = [];
     let expiryWarning = null;
+    let voucherDmFailed = false;
 
     // 1) Temp roles (package + PT roles).
     for (const g of grants) {
@@ -116,7 +117,37 @@ export default async function handler(req, res) {
       }
     }
 
-    res.json({ granted, failed, channels, channelErrors, expiryWarning });
+    // 3) DM gift voucher codes to the buyer.
+    if (vouchers.length) {
+      try {
+        const dm = await fetch(`${API}/users/@me/channels`, {
+          method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipient_id: userId }),
+        });
+        if (dm.ok) {
+          const dmCh = await dm.json();
+          for (const v of vouchers) {
+            const msg =
+              `🎁 **Your VisionX Gift Voucher**\n\n` +
+              `Balance: **$${Number(v.amount).toFixed(2)}**\n` +
+              `Code: \`${v.code}\`\n` +
+              `Valid for **1 year** · **single use**.\n\n` +
+              `Redeem it at checkout in the cart's "Discount / voucher code" field.\n\n` +
+              `_Please note: gift vouchers are non-refundable, cannot be exchanged for cash, ` +
+              `and are single-use. Keep your code private — do not share or forward it._ 🤍`;
+            const m = await fetch(`${API}/channels/${dmCh.id}/messages`, {
+              method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: msg }),
+            });
+            if (!m.ok) voucherDmFailed = true;
+          }
+        } else {
+          voucherDmFailed = true;
+        }
+      } catch (e) { voucherDmFailed = true; }
+    }
+
+    res.json({ granted, failed, channels, channelErrors, expiryWarning, voucherDmFailed });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'grant failed' });
