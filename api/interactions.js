@@ -23,6 +23,15 @@ async function readRaw(req) {
 }
 
 export default async function handler(req, res) {
+  // GET = quick diagnostic in the browser (does NOT leak the key, just confirms setup).
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      ok: true,
+      endpoint: 'interactions',
+      hasPublicKey: !!process.env.DISCORD_PUBLIC_KEY,
+      note: 'Discord posts here. If hasPublicKey is false, set DISCORD_PUBLIC_KEY in Vercel and redeploy.',
+    });
+  }
   if (req.method !== 'POST') return res.status(405).end('method');
 
   const sig = req.headers['x-signature-ed25519'];
