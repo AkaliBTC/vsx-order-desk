@@ -52,6 +52,7 @@ export default async function handler(req, res) {
     const channelErrors = [];
     let expiryWarning = null;
     let voucherDmFailed = false;
+    const expiries = [];
 
     // 1) Temp roles (package + PT roles).
     for (const g of grants) {
@@ -61,13 +62,15 @@ export default async function handler(req, res) {
       });
       if (r.ok || r.status === 204) {
         granted.push(g.label);
-        // Best-effort expiry record (for the daily auto-revoke cron).
+        // Expiry record for the daily auto-revoke cron.
         try {
-          const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + g.months * 30 * 24 * 3600 * 1000);
+          const ms = Date.now() + g.months * 30 * 24 * 3600 * 1000;
+          const expiresAt = admin.firestore.Timestamp.fromMillis(ms);
           await getAdmin().firestore().collection('entitlements').add({
             userId, roleId: g.roleId, label: g.label || null, ticketId: ticketId || null,
             expiresAt, createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+          expiries.push(`${g.label} → ${new Date(ms).toISOString().slice(0, 10)}`);
         } catch (e) { expiryWarning = e.message; }
       } else {
         failed.push(`${g.label} (discord ${r.status})`);
@@ -148,7 +151,7 @@ export default async function handler(req, res) {
       } catch (e) { voucherDmFailed = true; }
     }
 
-    res.json({ granted, failed, channels, channelErrors, expiryWarning, voucherDmFailed });
+    res.json({ granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'grant failed' });
