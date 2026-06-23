@@ -201,6 +201,8 @@ function AdminDetail({ ticket, modTag, user }) {
           {p.txHash ? ` · tx: ${p.txHash.slice(0, 10)}…` : ''}
         </div>
         {p.proofSent && <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-muted)', marginTop: 8 }}>Proof screenshot was posted to #tickets.</div>}
+        {p.markedPaidAt && <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-ok)', marginTop: 8 }}>Customer reported payment.</div>}
+        {p.alertError && <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-err)', marginTop: 8 }}>⚠ Staff @here alert failed: {p.alertError}</div>}
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {p.method === 'trc20' && ticket.status !== 'paid' && (

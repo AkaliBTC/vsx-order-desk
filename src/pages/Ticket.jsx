@@ -148,7 +148,12 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
       'payment.proofSent': !!file,
       'payment.markedPaidAt': serverTimestamp(),
     });
-    try { await postPayHint({ id: ticket.id, userTag: ticket.userTag, method: p.method, paid: false }); } catch (_) {}
+    try {
+      const hint = await postPayHint({ id: ticket.id, userTag: ticket.userTag, method: p.method, paid: false });
+      await updateDoc(doc(db, 'tickets', ticket.id), {
+        'payment.alertError': hint.ok ? null : `${hint.status || ''} ${hint.error || ''} ${hint.detail || ''}`.trim().slice(0, 300),
+      });
+    } catch (_) {}
   };
 
   return (
@@ -234,9 +239,9 @@ export function Chat({ ticket, user }) {
             );
           }
           const isTeam = role === 'mod';
-          const mine = role === (user.isMod ? 'mod' : 'customer');
+          const onRight = isTeam; // team always right, customer always left — identical for everyone
           return (
-            <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '78%', display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+            <div key={m.id} style={{ alignSelf: onRight ? 'flex-end' : 'flex-start', maxWidth: '78%', display: 'flex', flexDirection: 'column', alignItems: onRight ? 'flex-end' : 'flex-start' }}>
               <div className="mono" style={{ fontSize: 10, color: isTeam ? 'var(--vsx-gold-2)' : 'var(--vsx-muted)', margin: '0 8px 3px' }}>
                 {m.authorTag}{isTeam ? ' · Team' : ''}
               </div>
@@ -244,7 +249,7 @@ export function Chat({ ticket, user }) {
                 background: isTeam ? 'linear-gradient(180deg, rgba(212,175,55,.20), rgba(212,175,55,.10))' : 'var(--vsx-charcoal-3)',
                 border: isTeam ? '1px solid var(--vsx-gold-2)' : '1px solid var(--vsx-line)',
                 color: 'var(--vsx-offwhite)',
-                borderRadius: mine ? '16px 16px 5px 16px' : '16px 16px 16px 5px',
+                borderRadius: onRight ? '16px 16px 5px 16px' : '16px 16px 16px 5px',
                 padding: '9px 13px', fontSize: 14, lineHeight: 1.45, boxShadow: 'var(--shadow-soft)', wordBreak: 'break-word',
               }}>{m.body}</div>
             </div>

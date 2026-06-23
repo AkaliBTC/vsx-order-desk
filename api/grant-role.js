@@ -25,7 +25,8 @@ function chanName(s) {
 }
 
 // Which Discord role to ping in the ticket channel, per service id.
-const PING_ROLE = {
+// Which coach (Discord USER id) to ping in the ticket channel, per service id.
+const PING_USER = {
   'deepdive': '704243714687631370',
   'coach-michael': '704243714687631370',
   'coach-filip': '880178639436673074',
@@ -83,13 +84,13 @@ export default async function handler(req, res) {
         for (const svc of services) {
           const sName = typeof svc === 'string' ? svc : svc.name;
           const sId = typeof svc === 'string' ? '' : svc.id;
-          const pingRole = PING_ROLE[sId] || '';
+          const pingUser = PING_USER[sId] || '';
           const name = chanName(`${sName} ${userTag || userId}`);
           const overwrites = [
             { id: GUILD(), type: 0, deny: String(VIEW) },        // @everyone hidden
             { id: userId, type: 1, allow: String(VIEW) },        // customer can see
             ...modRoles.map((rid) => ({ id: rid, type: 0, allow: String(VIEW) })), // team can see
-            ...(pingRole ? [{ id: pingRole, type: 0, allow: String(VIEW) }] : []),  // responsible team
+            ...(pingUser ? [{ id: pingUser, type: 1, allow: String(VIEW) }] : []),  // responsible coach
           ];
           const r = await fetch(`${API}/guilds/${GUILD()}/channels`, {
             method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
@@ -98,7 +99,7 @@ export default async function handler(req, res) {
           if (r.ok) {
             const ch = await r.json();
             channels.push(name);
-            const ping = pingRole ? `<@&${pingRole}>` : 'Our team';
+            const ping = pingUser ? `<@${pingUser}>` : 'Our team';
             const content =
               `Hey <@${userId}> 👋 — thank you for your trust and your payment for **${sName}**! 🤍\n\n` +
               `${ping} will reach out to you right here in just a moment to get everything started. ` +
@@ -107,7 +108,7 @@ export default async function handler(req, res) {
               method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 content,
-                allowed_mentions: { users: [userId], roles: pingRole ? [pingRole] : [] },
+                allowed_mentions: { users: pingUser ? [userId, pingUser] : [userId] },
               }),
             }).catch(() => {});
           } else {

@@ -45,10 +45,12 @@ export const DISCLAIMERS = {
     'Keep your code private — do not share or forward it.',
 };
 
-// Full legal documents (PDF) linked next to the consent checkbox where available.
+// Full legal documents (PDF) linked next to each consent checkbox.
 export const DISCLAIMER_PDF = {
-  deepdive: '/VisionX_DeepDive_Disclaimer.pdf',
+  analysis: '/VisionX_MarketAnalysis_Disclaimer.pdf',
   tracker: '/VisionX_PositionTracker_Disclaimer.pdf',
+  deepdive: '/VisionX_DeepDive_Disclaimer.pdf',
+  coaching: '/VisionX_TACoaching_Disclaimer.pdf',
 };
 
 // ----- DEFAULT catalogue (seed) ----------------------------------------
