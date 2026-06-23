@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : null;
     if (!idToken) return res.status(401).json({ error: 'no token' });
     const decoded = await getAdmin().auth().verifyIdToken(idToken);
-    if (decoded.mod !== true) return res.status(403).json({ error: 'not a mod' });
+    if (decoded.mod !== true && decoded.admin !== true) return res.status(403).json({ error: 'not a mod' });
 
     const { ticketId, userId, userTag, grants = [], services = [], vouchers = [] } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'no userId' });

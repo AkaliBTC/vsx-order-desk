@@ -32,7 +32,7 @@ export function AuthProvider({ children }) {
         uid: fbUser.uid,
         tag: token.claims.tag || 'Member',
         avatar: token.claims.avatar || null,
-        isMod: token.claims.mod === true,
+        isMod: token.claims.mod === true || token.claims.admin === true,
         isAdmin: token.claims.admin === true,
         owns: Array.isArray(token.claims.owns) ? token.claims.owns : [],
         loyalty: token.claims.loyalty === true,
