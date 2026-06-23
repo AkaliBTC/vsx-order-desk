@@ -566,7 +566,6 @@ function SubscriptionsManager() {
   };
 
   const remove = async (e) => {
-    if (!confirm(`Remove ${e.label || 'role'} from ${e.userId}? The Discord role is taken away immediately.`)) return;
     setMsg('');
     setBusy(true);
     try { await call({ action: 'remove', id: e.id, userId: e.userId, roleId: e.roleId }); setMsg('✓ Removed.'); }
