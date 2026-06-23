@@ -149,7 +149,7 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
       'payment.markedPaidAt': serverTimestamp(),
     });
     try {
-      const hint = await postPayHint({ id: ticket.id, userTag: ticket.userTag, method: p.method, paid: false });
+      const hint = await postPayHint({ id: ticket.id, userTag: ticket.userTag, method: p.method, amount: ticket.total, paid: false });
       await updateDoc(doc(db, 'tickets', ticket.id), {
         'payment.alertError': hint.ok ? null : `${hint.status || ''} ${hint.error || ''} ${hint.detail || ''}`.trim().slice(0, 300),
       });

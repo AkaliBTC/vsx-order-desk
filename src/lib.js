@@ -5,11 +5,11 @@ const WEBHOOK_ARCHIVE = import.meta.env.VITE_WEBHOOK_ARCHIVE;
 // Pings @here in the staff channel the moment a customer reports a payment.
 // Posted by the bot server-side (api/pay-hint). Returns a result so the caller
 // can surface why it failed (e.g. the bot can't post in that channel).
-export async function postPayHint({ id, userTag, method, paid }) {
+export async function postPayHint({ id, userTag, method, amount, paid }) {
   try {
     const r = await fetch('/api/pay-hint', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticketId: id, userTag, method, paid: !!paid }),
+      body: JSON.stringify({ ticketId: id, userTag, method, amount, paid: !!paid }),
     });
     const data = await r.json().catch(() => ({}));
     return { ok: r.ok && data.ok === true, status: r.status, error: data.error, detail: data.detail };

@@ -10,12 +10,14 @@ export default async function handler(req, res) {
     const token = process.env.DISCORD_BOT_TOKEN;
     if (!token) return res.status(500).json({ error: 'no bot token' });
 
-    const { ticketId, userTag, method, paid } = req.body || {};
+    const { ticketId, userTag, method, amount, paid } = req.body || {};
     const m = method === 'trc20' ? 'USDT · TRC20' : method === 'paypal' ? 'PayPal' : (method || '—');
+    const amt = (amount === 0 || amount) ? `$${Number(amount).toFixed(2)}` : '—';
     const content =
       `@here 💸 **Payment reported**\n` +
       `• **Name:** ${userTag || '—'}\n` +
       `• **Ticket:** #${String(ticketId || '').slice(0, 6)}\n` +
+      `• **Amount:** ${amt}\n` +
       `• **Method:** ${m}\n` +
       `• **Paid:** ${paid ? '✅ Yes' : '⏳ Pending confirmation'}`;
 
