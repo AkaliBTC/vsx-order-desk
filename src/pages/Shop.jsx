@@ -79,9 +79,11 @@ export default function Shop() {
       // Premium+ = tracker for all → drop individual trackers
       next = next.map((x) => (x.kind === 'package' ? { ...x, withTracker: false } : x))
         .filter((x) => x.kind !== 'trackerOnly');
-      // duration must match the Premium package if it is in the cart
+      // duration may be anything up to the Premium package's runtime (shorter is fine)
       const prem = next.find((x) => x.kind === 'package' && x.pkgId === 'premium');
-      if (prem) item = { ...item, runtimeKey: prem.runtimeKey };
+      if (prem && runtimeByKey(item.runtimeKey).months > runtimeByKey(prem.runtimeKey).months) {
+        item = { ...item, runtimeKey: prem.runtimeKey };
+      }
     }
     if (item.kind === 'trackerOnly') {
       if (next.some((x) => x.kind === 'premiumplus')) return next; // covered by Premium+
@@ -190,7 +192,7 @@ export default function Shop() {
         )}
 
         <PremiumPlusCard price={cat.tracker.premiumPlus} enabled={ownsPremium}
-          active={hasPremiumPlus} lockedRuntime={premiumRuntimeKey} onAdd={add} />
+          active={hasPremiumPlus} maxRuntimeKey={premiumRuntimeKey} onAdd={add} />
 
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
@@ -391,10 +393,12 @@ function OwnedTrackerRow({ pkg, price, maxMonths, onAdd }) {
   );
 }
 
-function PremiumPlusCard({ price, enabled, active, lockedRuntime, onAdd }) {
-  const [rtKey, setRtKey] = useState('1M');
-  const effectiveKey = lockedRuntime || rtKey;
-  const locked = !!lockedRuntime;
+function PremiumPlusCard({ price, enabled, active, maxRuntimeKey, onAdd }) {
+  const maxMonths = maxRuntimeKey ? runtimeByKey(maxRuntimeKey).months : null;
+  const options = maxMonths ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
+  const [rtKey, setRtKey] = useState(options[0].key);
+  // clamp selection if the cap shrinks (e.g. Premium runtime changed)
+  const effectiveKey = options.some((r) => r.key === rtKey) ? rtKey : options[0].key;
   return (
     <div className="card" style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)', opacity: enabled ? 1 : 0.6 }}>
       <div>
@@ -403,14 +407,14 @@ function PremiumPlusCard({ price, enabled, active, lockedRuntime, onAdd }) {
         <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
           {!enabled
             ? 'Requires Premium — own the Premium role or add Premium to your cart.'
-            : locked
-              ? `Matches your Premium runtime (${runtimeByKey(effectiveKey).label}) — ${fmt(price)}/mo.`
+            : maxMonths
+              ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo. Choose any runtime up to your Premium (${runtimeByKey(maxRuntimeKey).label}).`
               : `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`}
         </p>
       </div>
       <div style={{ textAlign: 'right' }}>
-        <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled || locked}>
-          {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+        <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled}>
+          {options.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
         <button className="btn" disabled={!enabled || active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
           {active ? 'In cart' : 'Add'}
