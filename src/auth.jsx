@@ -38,6 +38,25 @@ export function AuthProvider({ children }) {
         loyalty: token.claims.loyalty === true,
       });
       setReady(true);
+
+      // Then refresh roles LIVE from Discord, so adding/removing a role in Discord
+      // takes effect on the next page load — no re-login required.
+      try {
+        const idToken = await fbUser.getIdToken();
+        const r = await fetch('/api/my-roles', {
+          method: 'POST', headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (r.ok) {
+          const d = await r.json();
+          setUser((u) => (u ? {
+            ...u,
+            owns: Array.isArray(d.owns) ? d.owns : u.owns,
+            loyalty: !!d.loyalty,
+            isMod: d.mod === true || d.admin === true,
+            isAdmin: d.admin === true,
+          } : u));
+        }
+      } catch (_) { /* keep cached claims */ }
     });
   }, []);
 

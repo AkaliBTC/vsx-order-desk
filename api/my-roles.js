@@ -44,7 +44,12 @@ export default async function handler(req, res) {
       loyalty = !!(data.loyaltyRoleId && roles.includes(data.loyaltyRoleId));
     } catch (_) { /* catalogue not set yet */ }
 
-    res.json({ owns, loyalty });
+    const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const adminRole = (process.env.DISCORD_ADMIN_ROLE_ID || '').trim();
+    const mod = roles.some((r) => modRoles.includes(r));
+    const admin = adminRole ? roles.includes(adminRole) : false;
+
+    res.json({ owns, loyalty, mod, admin });
   } catch (e) {
     res.status(500).json({ error: e.message || 'my-roles failed' });
   }

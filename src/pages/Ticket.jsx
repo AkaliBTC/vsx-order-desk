@@ -14,7 +14,28 @@ export default function Ticket() {
   const { user } = useAuth();
   const [ticket, setTicket] = useState(undefined);
 
-  useEffect(() => onSnapshot(doc(db, 'tickets', id), (s) => setTicket(s.exists() ? { id: s.id, ...s.data() } : null)), [id]);
+  // Robust subscription: errors (e.g. a brief auth/token hiccup while you tab away to
+  // pay) must NOT blank the ticket, and we re-subscribe when the tab regains focus.
+  useEffect(() => {
+    let unsub = () => {};
+    const subscribe = () => {
+      unsub();
+      unsub = onSnapshot(
+        doc(db, 'tickets', id),
+        (s) => setTicket(s.exists() ? { id: s.id, ...s.data() } : null),
+        (err) => { console.warn('ticket listener error:', err?.code || err); }, // transient — keep current view
+      );
+    };
+    subscribe();
+    const onVisible = () => { if (document.visibilityState === 'visible') subscribe(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      unsub();
+    };
+  }, [id, user?.uid]);
 
   if (ticket === undefined) return <div className="shell" style={{ paddingTop: 40 }}>Loading…</div>;
   if (ticket === null) return <div className="shell" style={{ paddingTop: 40 }}>Ticket not found.</div>;

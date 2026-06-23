@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db } from '../firebase';
 import { useAuth } from '../auth';
 import { useCatalogue } from '../catalogue';
 import { postTicketEmbed } from '../lib';
@@ -45,29 +45,13 @@ export default function Shop() {
     } catch (e) { setCodeError('Could not validate code.'); }
   };
 
-  // Ownership/loyalty are cached in the login token and go stale when a role is
-  // removed in Discord. Refresh them live on load so the shop reflects reality.
-  const [live, setLive] = useState({ owns: user.owns || [], loyalty: !!user.loyalty });
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const idToken = await auth.currentUser.getIdToken();
-        const r = await fetch('/api/my-roles', { method: 'POST', headers: { Authorization: `Bearer ${idToken}` } });
-        if (!r.ok) return;
-        const d = await r.json();
-        if (!cancelled && Array.isArray(d.owns)) setLive({ owns: d.owns, loyalty: !!d.loyalty });
-      } catch (_) { /* keep cached values */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const owns = user.owns || [];
 
-  const owns = live.owns;
-
-  // If a role was removed, drop any standalone tracker for a package you no longer own.
+  // owns is refreshed live in AuthProvider on load. If a role was removed, drop any
+  // standalone tracker still sitting in the cart for a package you no longer own.
   useEffect(() => {
-    setBasket((b) => b.filter((it) => it.kind !== 'trackerOnly' || live.owns.includes(it.pkgId)));
-  }, [live.owns]);
+    setBasket((b) => b.filter((it) => it.kind !== 'trackerOnly' || (user.owns || []).includes(it.pkgId)));
+  }, [user.owns]);
   const pkgById = (id) => cat.packages.find((p) => p.id === id);
   const svcById = (id) => cat.services.find((s) => s.id === id);
 
@@ -151,7 +135,7 @@ export default function Shop() {
   const total0 = lineItems.reduce((s, x) => s + x.price, 0);
   const analysisSubtotal = lineItems.filter((x) => x.disc === 'analysis').reduce((s, x) => s + x.price, 0);
   const voucherPurchaseTotal = lineItems.filter((x) => x.disc === 'voucher').reduce((s, x) => s + x.price, 0);
-  const loyaltyOff = live.loyalty ? Math.round(analysisSubtotal * 10) / 100 : 0; // 10% on analysis only
+  const loyaltyOff = user.loyalty ? Math.round(analysisSubtotal * 10) / 100 : 0; // 10% on analysis only
   const afterLoyalty = total0 - loyaltyOff;
   // codes & vouchers never discount a gift-voucher purchase itself
   const discountBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
