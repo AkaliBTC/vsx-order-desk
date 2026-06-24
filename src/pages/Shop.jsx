@@ -23,16 +23,27 @@ export default function Shop() {
     setCodeError('');
     if (!code) return;
     try {
-      // 1) gift voucher (fixed $ balance)?
+      // 1) gift voucher ($ balance or % off)
       const vs = await getDoc(doc(db, 'vouchers', code));
       if (vs.exists()) {
         const v = vs.data();
         if (v.used) { setCodeError('Voucher already used.'); return; }
         if (v.expiresAt && v.expiresAt.toMillis() < Date.now()) { setCodeError('Voucher expired.'); return; }
-        setApplied({ type: 'voucher', code, amount: Number(v.amount) });
+        if (v.percent) setApplied({ type: 'voucher', code, percent: Number(v.percent) });
+        else setApplied({ type: 'voucher', code, amount: Number(v.amount) });
         return;
       }
-      // 2) percentage discount code?
+      // 2) referral code — rewards the owner; each customer may use ONE in their lifetime
+      const rf = await getDoc(doc(db, 'referrals', code));
+      if (rf.exists()) {
+        const owner = rf.data().ownerId;
+        if (owner === user.uid) { setCodeError("You can't use your own referral code."); return; }
+        const used = await getDoc(doc(db, 'referral_used', user.uid));
+        if (used.exists()) { setCodeError("You've already used a referral code — one per customer."); return; }
+        setApplied({ type: 'referral', code, ownerId: owner });
+        return;
+      }
+      // 3) percentage discount code?
       const snap = await getDoc(doc(db, 'discounts', code));
       if (snap.exists()) {
         const d = snap.data();
@@ -146,7 +157,9 @@ export default function Shop() {
     : 0;
   const codeOff = applied?.type === 'percent' ? Math.round(codeBase * applied.percent) / 100 : 0;
   const voucherBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
-  const voucherOff = applied?.type === 'voucher' ? Math.min(applied.amount, voucherBase) : 0;
+  const voucherOff = applied?.type === 'voucher'
+    ? (applied.percent ? Math.round(voucherBase * applied.percent) / 100 : Math.min(applied.amount, voucherBase))
+    : 0;
   const total = +(afterLoyalty - codeOff - voucherOff).toFixed(2);
   const discKeys = [...new Set(lineItems.map((x) => x.disc))];
 
@@ -269,9 +282,11 @@ export default function Shop() {
                 {applied ? (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                     <span className="mono" style={{ color: 'var(--vsx-gold)' }}>
-                      {applied.code} {applied.type === 'voucher'
-                        ? `(${fmt(applied.amount)} voucher)`
-                        : `(−${applied.percent}%${(applied.scope && applied.scope.length) ? ' · ' + applied.scope.map((s) => ({ analysis: 'Analysis', tracker: 'Tracker', deepdive: 'Deep Dive', coaching: 'Coaching' }[s] || s)).join(', ') : ''})`}
+                      {applied.code} {applied.type === 'referral'
+                        ? '(referral · your friend gets rewarded 🤍)'
+                        : applied.type === 'voucher'
+                          ? `(${applied.percent ? `−${applied.percent}%` : fmt(applied.amount)} voucher)`
+                          : `(−${applied.percent}%${(applied.scope && applied.scope.length) ? ' · ' + applied.scope.map((s) => ({ analysis: 'Analysis', tracker: 'Tracker', deepdive: 'Deep Dive', coaching: 'Coaching' }[s] || s)).join(', ') : ''})`}
                     </span>
                     <button onClick={() => { setApplied(null); setCodeInput(''); }} style={{ background: 'none', color: 'var(--vsx-muted)', fontSize: 12, padding: 0 }}>remove</button>
                   </div>
@@ -332,6 +347,7 @@ export default function Shop() {
               grants, services, voucherPurchases,
               discount: applied?.type === 'percent' ? { code: applied.code, percent: applied.percent, scope: applied.scope || [] } : null,
               redeemedVoucher: applied?.type === 'voucher' ? applied.code : null,
+              referralCode: applied?.type === 'referral' ? applied.code : null,
               loyalty: loyaltyOff > 0,
               consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },
               payment: { method: null, status: 'unpaid' },

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth, login } from './auth';
 import Shop from './pages/Shop';
 import Ticket from './pages/Ticket';
 import Admin from './pages/Admin';
+import Dashboard from './pages/Dashboard';
 
 function Header() {
   const { user, logout } = useAuth();
@@ -15,6 +16,7 @@ function Header() {
         <span className="eyebrow hide-sm">Order Desk</span>
       </Link>
       <nav style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <Link to="/dashboard" className="btn-ghost" style={{ textDecoration: 'none', padding: '8px 16px' }}>Dashboard</Link>
         {user.isAdmin
           ? <span className="tag gold">Admin</span>
           : user.isMod ? <span className="tag" style={{ color: '#7aa2f7', borderColor: '#34406b' }}>Moderator</span> : null}
@@ -89,6 +91,7 @@ export default function App() {
         <ErrorBanner />
         <Routes>
           <Route path="/" element={<Gate><Shop /></Gate>} />
+          <Route path="/dashboard" element={<Gate><Dashboard /></Gate>} />
           <Route path="/ticket/:id" element={<Gate><Ticket /></Gate>} />
           <Route path="/admin" element={<Gate mod><Admin /></Gate>} />
         </Routes>

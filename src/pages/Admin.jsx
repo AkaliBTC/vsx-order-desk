@@ -27,12 +27,14 @@ export default function Admin() {
         <button className={view === 'discounts' ? 'btn' : 'btn-ghost'} onClick={() => setView('discounts')}>Discounts</button>
         <button className={view === 'vouchers' ? 'btn' : 'btn-ghost'} onClick={() => setView('vouchers')}>Vouchers</button>
         <button className={view === 'subs' ? 'btn' : 'btn-ghost'} onClick={() => setView('subs')}>Subscriptions</button>
+        <button className={view === 'referrals' ? 'btn' : 'btn-ghost'} onClick={() => setView('referrals')}>Referrals</button>
       </div>
       {view === 'tickets' && <Tickets user={user} />}
       {view === 'catalogue' && <CatalogueEditor />}
       {view === 'discounts' && <DiscountsEditor />}
       {view === 'vouchers' && <VouchersManager />}
       {view === 'subs' && <SubscriptionsManager />}
+      {view === 'referrals' && <ReferralsManager />}
     </div>
   );
 }
@@ -95,6 +97,7 @@ function AdminDetail({ ticket, modTag, user }) {
           grants: ticket.grants || [],
           services: ticket.services || [],
           vouchers,
+          referralCode: ticket.referralCode || '',
         }),
       });
       const d = await r.json();
@@ -106,6 +109,7 @@ function AdminDetail({ ticket, modTag, user }) {
       if (d.channels?.length) lines.push('Ticket channels: ' + d.channels.join(', '));
       if (vouchers.length) lines.push('Voucher codes: ' + vouchers.map((v) => v.code).join(', '));
       if (d.voucherDmFailed) lines.push('⚠ Could not DM the voucher (buyer may have DMs closed) — codes: ' + vouchers.map((v) => v.code).join(', '));
+      if (d.referral?.rewarded) lines.push(`Referral: owner rewarded (${d.referral.milestone ? '$25 milestone' : '5%'}, use #${d.referral.uses})`);
       if (d.failed?.length) lines.push('Roles failed: ' + d.failed.join(', '));
       if (d.channelErrors?.length) lines.push('Channels failed: ' + d.channelErrors.join(', '));
       if (lines.length) alert(lines.join('\n'));
@@ -468,8 +472,29 @@ function DiscountsEditor() {
 // ---------- Gift voucher management ----------
 function VouchersManager() {
   const [list, setList] = useState([]);
+  const [gAmount, setGAmount] = useState(25);
+  const [gExpiry, setGExpiry] = useState('');
+  const [gCode, setGCode] = useState('');
+  const [gErr, setGErr] = useState('');
   useEffect(() => onSnapshot(collection(db, 'vouchers'),
     (s) => setList(s.docs.map((d) => ({ code: d.id, ...d.data() })))), []);
+
+  const generate = async () => {
+    setGErr(''); setGCode('');
+    const amt = Number(gAmount);
+    if (!(amt > 0)) { setGErr('Enter a $ amount above 0.'); return; }
+    try {
+      let code = '';
+      for (let i = 0; i < 6; i++) { const c = genVoucherCode(); const sn = await getDoc(doc(db, 'vouchers', c)); if (!sn.exists()) { code = c; break; } }
+      if (!code) { setGErr('Could not allocate a code, try again.'); return; }
+      await setDoc(doc(db, 'vouchers', code), {
+        amount: amt, used: false, source: 'giveaway',
+        expiresAt: gExpiry ? Timestamp.fromDate(new Date(gExpiry + 'T23:59:59')) : null,
+        createdAt: serverTimestamp(),
+      });
+      setGCode(code);
+    } catch (e) { setGErr(e.message); }
+  };
 
   const deactivate = async (code) => {
     if (!confirm(`Deactivate voucher ${code}? It can no longer be redeemed.`)) return;
@@ -481,29 +506,51 @@ function VouchersManager() {
     try { await deleteDoc(doc(db, 'vouchers', code)); } catch (e) { alert('Failed: ' + e.message); }
   };
 
+  const inp = { marginTop: 4 };
+  const lbl = { fontSize: 11, color: 'var(--vsx-muted)', display: 'block' };
   const sorted = [...list].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  const valueOf = (v) => v.percent ? `${v.percent}%` : fmt(Number(v.amount) || 0);
   return (
     <div style={{ display: 'grid', gap: 18, maxWidth: 760 }}>
       <div>
         <p className="eyebrow">Vouchers</p>
-        <h2 style={{ fontSize: 24 }}>Issued gift vouchers</h2>
-        <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>Every voucher ever generated. Deactivate to block redemption, or delete to remove it entirely.</p>
+        <h2 style={{ fontSize: 24 }}>Gift vouchers</h2>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>Generate a code for a giveaway, or manage every voucher ever issued. Deactivate blocks redemption; delete removes it entirely.</p>
       </div>
+
+      <div className="card" style={{ display: 'grid', gap: 12 }}>
+        <p className="eyebrow" style={{ marginBottom: 2 }}>Generate giveaway code</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr auto', gap: 12, alignItems: 'end' }}>
+          <div><label style={lbl}>Value ($)</label><input style={inp} type="number" value={gAmount} onChange={(e) => setGAmount(e.target.value)} /></div>
+          <div><label style={lbl}>Expires (optional)</label><input style={inp} type="date" value={gExpiry} onChange={(e) => setGExpiry(e.target.value)} /></div>
+          <button className="btn" onClick={generate}>Generate</button>
+        </div>
+        {gErr && <p style={{ color: 'var(--vsx-err)', fontSize: 13 }}>{gErr}</p>}
+        {gCode && (
+          <div style={{ background: 'rgba(212,175,55,.1)', border: '1px solid var(--vsx-gold)', borderRadius: 10, padding: '10px 14px' }}>
+            New giveaway code: <span className="mono" style={{ color: 'var(--vsx-gold)', fontSize: 16, fontWeight: 600 }}>{gCode}</span>
+            <span style={{ fontSize: 12, color: 'var(--vsx-muted)', marginLeft: 10 }}>single use · {fmt(Number(gAmount))}</span>
+          </div>
+        )}
+      </div>
+
       <div className="card">
+        <p className="eyebrow" style={{ marginBottom: 10 }}>All vouchers</p>
         {sorted.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No vouchers issued yet.</p>}
         {sorted.map((v) => {
           const exp = v.expiresAt ? new Date(v.expiresAt.toMillis()) : null;
           const expired = exp && exp.getTime() < Date.now();
           const status = v.used ? 'USED / OFF' : expired ? 'EXPIRED' : 'ACTIVE';
           const color = v.used || expired ? 'var(--vsx-muted)' : 'var(--vsx-ok)';
+          const origin = v.source === 'referral' ? 'referral 5%' : v.source === 'referral-milestone' ? 'referral $25' : v.source === 'giveaway' ? 'giveaway' : (v.buyerId ? `buyer ${v.buyerId}` : 'gift purchase');
           return (
             <div key={v.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
               <div style={{ minWidth: 0 }}>
                 <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{v.code}</span>
-                <span className="mono" style={{ fontSize: 12, marginLeft: 10 }}>{fmt(Number(v.amount) || 0)}</span>
+                <span className="mono" style={{ fontSize: 12, marginLeft: 10 }}>{valueOf(v)}</span>
                 <span className="mono" style={{ fontSize: 12, marginLeft: 10, color }}>{status}</span>
                 <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>
-                  buyer {v.buyerId || '—'}{exp ? ` · until ${exp.toLocaleDateString()}` : ''}
+                  {origin}{exp ? ` · until ${exp.toLocaleDateString()}` : ''}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
@@ -623,6 +670,46 @@ function SubscriptionsManager() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Referral overview (who referred how many) ----------
+function ReferralsManager() {
+  const [list, setList] = useState([]);
+  const [err, setErr] = useState('');
+  useEffect(() => onSnapshot(collection(db, 'referrals'),
+    (s) => setList(s.docs.map((d) => ({ code: d.id, ...d.data() }))),
+    (e) => setErr('Cannot read referrals: ' + e.code)), []);
+
+  const sorted = [...list].sort((a, b) => (b.uses || 0) - (a.uses || 0));
+  const total = sorted.reduce((s, r) => s + (r.uses || 0), 0);
+  return (
+    <div style={{ display: 'grid', gap: 18, maxWidth: 760 }}>
+      <div>
+        <p className="eyebrow">Referrals</p>
+        <h2 style={{ fontSize: 24 }}>Referral usage</h2>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>
+          Every customer has one referral code. This shows how often each was used —
+          {' '}{total} successful referral{total === 1 ? '' : 's'} so far.
+        </p>
+      </div>
+      {err && <p style={{ color: 'var(--vsx-err)', fontSize: 13 }}>{err}</p>}
+      <div className="card">
+        {sorted.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No referral codes yet.</p>}
+        {sorted.map((r) => (
+          <div key={r.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
+            <div style={{ minWidth: 0 }}>
+              <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{r.code}</span>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>owner {r.ownerId}</div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--vsx-gold)' }}>{r.uses || 0}</div>
+              <div style={{ fontSize: 10, color: 'var(--vsx-muted)' }}>uses · {10 - ((r.uses || 0) % 10)} to next $25</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

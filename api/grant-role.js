@@ -57,6 +57,59 @@ async function bumpLoyalty(db, userId, expiresMs) {
   } catch (_) { /* non-fatal */ }
 }
 
+// Process a referral on a successful purchase: lock the buyer (one referral per life),
+// bump the owner's use count, and reward the owner (5% voucher; $25 every 10th use).
+function refCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const block = () => Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+  return `VSX-${block()}-${block()}`;
+}
+async function processReferral(db, referralCode, buyerId) {
+  const out = { rewarded: false };
+  try {
+    if (!referralCode) return out;
+    const lockRef = db.collection('referral_used').doc(buyerId);
+    if ((await lockRef.get()).exists) return out;               // buyer already used one
+    const refRef = db.collection('referrals').doc(referralCode);
+    const refSnap = await refRef.get();
+    if (!refSnap.exists) return out;
+    const owner = refSnap.data().ownerId;
+    if (!owner || owner === buyerId) return out;                // no self-referral
+    const newUses = (refSnap.data().uses || 0) + 1;
+    await refRef.set({ uses: newUses }, { merge: true });
+    await lockRef.set({ code: referralCode, ownerId: owner, at: admin.firestore.FieldValue.serverTimestamp() });
+
+    const code = refCode();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 365 * 24 * 3600 * 1000);
+    const base = { used: false, expiresAt, ownerId: owner, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+    let msg;
+    if (newUses % 10 === 0) {
+      await db.collection('vouchers').doc(code).set({ ...base, amount: 25, source: 'referral-milestone' });
+      msg = `\uD83C\uDF89 **Referral milestone!** Your code has now been used ${newUses} times.\n\n` +
+        `Here's a **$25 gift voucher** as a thank-you: \`${code}\`\nRedeem it at checkout \u00B7 single use \u00B7 valid 1 year. \uD83E\uDD0D`;
+    } else {
+      await db.collection('vouchers').doc(code).set({ ...base, percent: 5, source: 'referral' });
+      msg = `\uD83E\uDD1D Someone just used your referral code \u2014 thank you! \uD83E\uDD0D\n\n` +
+        `Here's **5% off** your next order: \`${code}\`\nRedeem it at checkout \u00B7 single use \u00B7 valid 1 year.`;
+    }
+    try {
+      const dmCh = await fetch(`${API}/users/@me/channels`, {
+        method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipient_id: owner }),
+      });
+      if (dmCh.ok) {
+        const c = await dmCh.json();
+        await fetch(`${API}/channels/${c.id}/messages`, {
+          method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: msg }),
+        }).catch(() => {});
+      }
+    } catch (_) {}
+    out.rewarded = true; out.uses = newUses; out.milestone = newUses % 10 === 0;
+  } catch (_) {}
+  return out;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
   try {
@@ -67,7 +120,7 @@ export default async function handler(req, res) {
     const decoded = await getAdmin().auth().verifyIdToken(idToken);
     if (decoded.mod !== true && decoded.admin !== true) return res.status(403).json({ error: 'not a mod' });
 
-    const { ticketId, userId, userTag, grants = [], services = [], vouchers = [] } = req.body || {};
+    const { ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '' } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'no userId' });
 
     const granted = [];
@@ -188,7 +241,9 @@ export default async function handler(req, res) {
       } catch (e) { voucherDmFailed = true; }
     }
 
-    res.json({ granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed });
+    const referral = await processReferral(getAdmin().firestore(), referralCode, userId);
+
+    res.json({ granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'grant failed' });
