@@ -33,6 +33,30 @@ const PING_USER = {
   'coach-akali': '774014917057314877',
 };
 
+// Tracks continuous subscription coverage per user for the auto-loyalty reward.
+// A streak survives gaps of up to 3 days; a longer gap resets it.
+const LOYALTY_GRACE_MS = 3 * 24 * 3600 * 1000;
+async function bumpLoyalty(db, userId, expiresMs) {
+  try {
+    const ref = db.collection('loyalty_track').doc(userId);
+    const now = Date.now();
+    const snap = await ref.get();
+    let streakStart = now, coveredUntil = expiresMs;
+    if (snap.exists) {
+      const t = snap.data();
+      const prevCovered = t.coveredUntil ? t.coveredUntil.toMillis() : 0;
+      const prevStart = t.streakStart ? t.streakStart.toMillis() : now;
+      if (now <= prevCovered + LOYALTY_GRACE_MS) { streakStart = prevStart; coveredUntil = Math.max(prevCovered, expiresMs); }
+      else { streakStart = now; coveredUntil = expiresMs; }
+    }
+    await ref.set({
+      streakStart: admin.firestore.Timestamp.fromMillis(streakStart),
+      coveredUntil: admin.firestore.Timestamp.fromMillis(coveredUntil),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (_) { /* non-fatal */ }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
   try {
@@ -71,6 +95,7 @@ export default async function handler(req, res) {
             expiresAt, createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           expiries.push(`${g.label} → ${new Date(ms).toISOString().slice(0, 10)}`);
+          await bumpLoyalty(getAdmin().firestore(), userId, ms);
         } catch (e) { expiryWarning = e.message; }
       } else {
         failed.push(`${g.label} (discord ${r.status})`);

@@ -58,9 +58,7 @@ export const DISCLAIMER_PDF = {
 // Leave '' until you set the real role IDs in the Admin editor.
 export const DEFAULT_CATALOGUE = {
   packages: [
-    { id: 'btc-eth', name: 'BTC + ETH', desc: 'Bitcoin & Ethereum analysis, incl. Total3.',
-      prices: { '1M': null, '3M': null, '12M': null }, tracker: false, roleId: '', ptRoleId: '' },
-    { id: 'crypto', name: 'Crypto', desc: 'BTC + ETH package plus altcoins.',
+    { id: 'crypto', name: 'Crypto', desc: 'Full crypto analysis — BTC, ETH, Total3 & altcoins.',
       prices: { '1M': null, '3M': null, '12M': null }, tracker: true, roleId: '', ptRoleId: '' },
     { id: 'stocks', name: 'Stocks', desc: 'Equity market analysis.',
       prices: { '1M': 51, '3M': 135, '12M': 486 }, tracker: true, roleId: '', ptRoleId: '' },

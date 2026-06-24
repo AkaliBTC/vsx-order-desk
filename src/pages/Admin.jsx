@@ -263,6 +263,7 @@ function CatalogueEditor() {
     const services = f.services.map((s, idx) => idx === i ? { ...s, [key]: key === 'price' ? Number(val) : val } : s);
     return { ...f, services };
   });
+  const removePkg = (i) => setForm((f) => ({ ...f, packages: f.packages.filter((_, idx) => idx !== i) }));
 
   const save = async () => {
     setSaveErr('');
@@ -300,9 +301,12 @@ function CatalogueEditor() {
         <div key={p.id} className="card" style={{ display: 'grid', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{p.id}</span>
-            <label style={{ fontSize: 12, color: 'var(--vsx-muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="checkbox" checked={!!p.tracker} onChange={(e) => setPkg(i, 'tracker', e.target.checked)} /> Tracker available
-            </label>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+              <label style={{ fontSize: 12, color: 'var(--vsx-muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={!!p.tracker} onChange={(e) => setPkg(i, 'tracker', e.target.checked)} /> Tracker available
+              </label>
+              <button onClick={() => removePkg(i)} style={{ background: 'none', color: 'var(--vsx-err)', fontSize: 12, padding: 0 }}>remove package</button>
+            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div><label style={lbl}>Name</label><input style={inp} value={p.name} onChange={(e) => setPkg(i, 'name', e.target.value)} /></div>

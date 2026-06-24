@@ -74,7 +74,40 @@ export default async function handler(req, res) {
       reminded += 1;
     }
 
-    res.json({ removed, reminded });
+    // 3) Loyalty auto-grant: 1 year of continuous coverage (gaps ≤ 3 days), still covered now.
+    let loyaltyGranted = 0;
+    let loyaltyRoleId = '';
+    try {
+      const cat = await db.doc('config/catalogue').get();
+      loyaltyRoleId = (cat.exists ? cat.data().loyaltyRoleId : '') || '';
+    } catch (_) {}
+    if (loyaltyRoleId) {
+      const YEAR = 365 * 24 * 3600 * 1000;
+      const GRACE = 3 * 24 * 3600 * 1000;
+      const tracks = await db.collection('loyalty_track').get();
+      for (const d of tracks.docs) {
+        const t = d.data();
+        if (t.granted) continue;
+        const start = t.streakStart ? t.streakStart.toMillis() : Date.now();
+        const covered = t.coveredUntil ? t.coveredUntil.toMillis() : 0;
+        const stillCovered = covered >= Date.now() - GRACE;     // streak hasn't lapsed
+        const yearReached = (Date.now() - start) >= YEAR;        // continuous for ≥ 1 year
+        if (stillCovered && yearReached) {
+          const r = await fetch(`${API}/guilds/${process.env.DISCORD_GUILD_ID}/members/${d.id}/roles/${loyaltyRoleId}`, {
+            method: 'PUT', headers: { Authorization: BOT() },
+          });
+          if (r.ok || r.status === 204) {
+            await d.ref.set({ granted: true, grantedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+            await dm(d.id,
+              `🏆 **One year with VisionX!** Thank you for staying with us for a full year. 🤍\n\n` +
+              `Your **Loyalty** status is now active — enjoy **10% off** all analysis from here on.`);
+            loyaltyGranted += 1;
+          }
+        }
+      }
+    }
+
+    res.json({ removed, reminded, loyaltyGranted });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'revoke failed' });

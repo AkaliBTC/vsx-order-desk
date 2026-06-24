@@ -34,11 +34,31 @@ export default async function handler(req, res) {
         return res.status(502).json({ error: `discord ${r.status} ${detail.slice(0, 150)}` });
       }
       const m = Number(months) || 1;
-      const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + m * 30 * 24 * 3600 * 1000);
+      const ms = Date.now() + m * 30 * 24 * 3600 * 1000;
+      const expiresAt = admin.firestore.Timestamp.fromMillis(ms);
       await db.collection('entitlements').add({
         userId, roleId, label: label || 'Role', expiresAt,
         createdAt: admin.firestore.FieldValue.serverTimestamp(), grantedBy: decoded.uid,
       });
+      // Extend the loyalty streak (continuous-coverage tracking).
+      try {
+        const ref = db.collection('loyalty_track').doc(userId);
+        const now = Date.now();
+        const snap = await ref.get();
+        let streakStart = now, coveredUntil = ms;
+        if (snap.exists) {
+          const t = snap.data();
+          const prevCovered = t.coveredUntil ? t.coveredUntil.toMillis() : 0;
+          const prevStart = t.streakStart ? t.streakStart.toMillis() : now;
+          if (now <= prevCovered + 3 * 24 * 3600 * 1000) { streakStart = prevStart; coveredUntil = Math.max(prevCovered, ms); }
+          else { streakStart = now; coveredUntil = ms; }
+        }
+        await ref.set({
+          streakStart: admin.firestore.Timestamp.fromMillis(streakStart),
+          coveredUntil: admin.firestore.Timestamp.fromMillis(coveredUntil),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } catch (_) { /* non-fatal */ }
       return res.json({ ok: true });
     }
 
