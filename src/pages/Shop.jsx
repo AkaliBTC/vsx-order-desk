@@ -58,10 +58,14 @@ export default function Shop() {
 
   const owns = user.owns || [];
 
-  // owns is refreshed live in AuthProvider on load. If a role was removed, drop any
-  // standalone tracker still sitting in the cart for a package you no longer own.
+  // owns is refreshed live in AuthProvider on load. Drop any standalone tracker whose
+  // access you no longer have — but keep them while Premium covers you (owned or in cart).
   useEffect(() => {
-    setBasket((b) => b.filter((it) => it.kind !== 'trackerOnly' || (user.owns || []).includes(it.pkgId)));
+    setBasket((b) => {
+      const premiumCovers = (user.owns || []).includes('premium')
+        || b.some((x) => x.kind === 'package' && x.pkgId === 'premium');
+      return b.filter((it) => it.kind !== 'trackerOnly' || premiumCovers || (user.owns || []).includes(it.pkgId));
+    });
   }, [user.owns]);
   const pkgById = (id) => cat.packages.find((p) => p.id === id);
   const svcById = (id) => cat.services.find((s) => s.id === id);
@@ -112,9 +116,12 @@ export default function Shop() {
   const remove = (i) => setBasket((b) => {
     const target = b[i];
     let next = b.filter((_, idx) => idx !== i);
-    // removing Premium also removes Premium+ (it depends on Premium)
-    if (target && target.kind === 'package' && target.pkgId === 'premium') {
+    // Removing the Premium *purchase* — if you don't also own Premium via a role, you lose
+    // access to everything Premium unlocked: Premium+ and any tracker for a package you
+    // don't individually own all fly out of the cart too.
+    if (target && target.kind === 'package' && target.pkgId === 'premium' && !owns.includes('premium')) {
       next = next.filter((x) => x.kind !== 'premiumplus');
+      next = next.filter((x) => x.kind !== 'trackerOnly' || owns.includes(x.pkgId));
     }
     return next;
   });
