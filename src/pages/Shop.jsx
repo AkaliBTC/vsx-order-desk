@@ -170,13 +170,12 @@ export default function Shop() {
     ...(voucherOff > 0 ? [{ name: `Voucher ${applied.code}`, price: -voucherOff }] : []),
   ];
 
-  // Packages the user can add a standalone tracker for (owns role, not buying now).
-  // (not packages you're buying right now — Premium in the cart does not count here).
-  // Standalone trackers you can add = packages you INDIVIDUALLY own via a Discord role
-  // and aren't buying right now. Owning Premium does NOT unlock every tracker here —
-  // Premium holders add all trackers via Premium+ instead.
+  // Packages the user can add a standalone tracker for.
+  // = any trackable package you have access to (individually owned OR covered by Premium)
+  //   and aren't buying as a package right now. Hidden entirely once Premium+ is in the
+  //   cart, since Premium+ already covers every tracker.
   const ownedTrackable = hasPremiumPlus ? [] : cat.packages.filter(
-    (p) => p.tracker && p.id !== 'premium' && !buyingIds.has(p.id) && owns.includes(p.id),
+    (p) => p.tracker && p.id !== 'premium' && !buyingIds.has(p.id) && (ownsPremium || owns.includes(p.id)),
   );
 
   return (
@@ -195,7 +194,7 @@ export default function Shop() {
         <div className="cols-2">
           {cat.packages.map((p, i) => (
             <PackageCard key={p.id} index={i} pkg={p} trackerPrice={cat.tracker.perPackage}
-              allowTracker={p.tracker && !hasPremiumPlus}
+              allowTracker={p.tracker && p.id !== 'premium' && !hasPremiumPlus}
               inCart={buyingIds.has(p.id)}
               covered={p.id !== 'premium' && buyingIds.has('premium')}
               onAdd={add} />
@@ -204,10 +203,11 @@ export default function Shop() {
 
         {ownedTrackable.length > 0 && (
           <>
-            <p className="eyebrow" style={{ marginTop: 30 }}>Your packages</p>
+            <p className="eyebrow" style={{ marginTop: 30 }}>Portfolio Tracker</p>
             <h2 style={{ fontSize: 22, margin: '6px 0 6px' }}>Add Portfolio Tracker</h2>
             <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '0 0 14px' }}>
-              For packages you already own — {fmt(cat.tracker.perPackage)}/mo each.
+              Add a tracker for any package individually — {fmt(cat.tracker.perPackage)}/mo each.
+              Or pick Premium+ below for every tracker at once (selecting it clears the individual ones).
             </p>
             <div style={{ display: 'grid', gap: 10 }}>
               {ownedTrackable.map((p) => (
