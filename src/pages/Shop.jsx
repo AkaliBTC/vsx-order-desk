@@ -98,27 +98,30 @@ export default function Shop() {
   const premiumRuntimeKey = premiumInCart ? premiumInCart.runtimeKey : null;
   const premiumPkg = pkgById('premium');
 
-  // Months remaining on an existing Discord role (from the user's own entitlements).
+  // Raw months remaining on an existing Discord role (from the user's own entitlements).
+  // Fractional — e.g. 0.4 means ~12 days left. null = unknown (no entitlement on record).
   const monthsLeft = (roleId) => {
     const exp = roleId ? entExpiry[roleId] : null;
     if (!exp || exp <= Date.now()) return null;
-    return Math.max(1, Math.ceil((exp - Date.now()) / (30 * 24 * 3600 * 1000)));
+    return (exp - Date.now()) / (30 * 24 * 3600 * 1000);
   };
   // Cap a tracker's runtime to: the Premium runtime being bought now, AND/OR the time
   // still left on the package's own role. null = no cap (full RUNTIMES available).
+  // A cap below 1 month means the role expires too soon — the PT can't be bought until
+  // the subscription is extended.
   const trackerCap = (p) => {
     const caps = [];
     if (premiumInCart) caps.push(runtimeByKey(premiumRuntimeKey).months);
     const left = monthsLeft(p.roleId);
     if (left != null) caps.push(left);
-    return caps.length ? Math.max(1, Math.min(...caps)) : null;
+    return caps.length ? Math.min(...caps) : null;
   };
   const premiumPlusCap = (() => {
     const caps = [];
     if (premiumInCart) caps.push(runtimeByKey(premiumRuntimeKey).months);
     const left = monthsLeft(premiumPkg?.roleId);
     if (left != null) caps.push(left);
-    return caps.length ? Math.max(1, Math.min(...caps)) : null;
+    return caps.length ? Math.min(...caps) : null;
   })();
 
   // PT eligible: package supports tracker AND (premium owner/buyer, or owns this
@@ -491,32 +494,41 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, cover
 }
 
 function OwnedTrackerRow({ pkg, price, maxMonths, onAdd }) {
-  const options = maxMonths ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
-  const [rtKey, setRtKey] = useState(options[0].key);
+  const options = maxMonths != null ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
+  const blocked = options.length === 0; // role expires in under 1 month → must extend first
+  const [rtKey, setRtKey] = useState((options[0] || RUNTIMES[0]).key);
   // keep selection valid if the cap shrinks
-  const valid = options.some((r) => r.key === rtKey) ? rtKey : options[0].key;
+  const valid = options.some((r) => r.key === rtKey) ? rtKey : (options[0] || RUNTIMES[0]).key;
   return (
     <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
-      <div style={{ fontWeight: 500 }}>{pkg.name}</div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <select value={valid} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto' }}>
-          {options.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-        </select>
-        <button className="btn-ghost" onClick={() => onAdd({ kind: 'trackerOnly', pkgId: pkg.id, runtimeKey: valid })}>
-          Add tracker
-        </button>
+      <div style={{ fontWeight: 500 }}>
+        {pkg.name}
+        {blocked && <div style={{ fontSize: 11, color: 'var(--vsx-muted)', fontWeight: 400, marginTop: 2 }}>Less than 1 month left — extend this subscription to add a tracker.</div>}
       </div>
+      {blocked ? (
+        <span style={{ fontSize: 12, color: 'var(--vsx-gold)', flexShrink: 0 }}>Extend to unlock</span>
+      ) : (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <select value={valid} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto' }}>
+            {options.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </select>
+          <button className="btn-ghost" onClick={() => onAdd({ kind: 'trackerOnly', pkgId: pkg.id, runtimeKey: valid })}>
+            Add tracker
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd }) {
-  const options = maxMonths ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
+  const options = maxMonths != null ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
+  const blocked = enabled && options.length === 0; // Premium expires in under 1 month
   const safe = options.length ? options : [RUNTIMES[0]];
   const [rtKey, setRtKey] = useState(safe[0].key);
   // clamp selection if the cap shrinks (e.g. Premium runtime changed)
   const effectiveKey = safe.some((r) => r.key === rtKey) ? rtKey : safe[0].key;
-  const capLabel = maxMonths ? (RUNTIMES.filter((r) => r.months <= maxMonths).slice(-1)[0]?.label || '') : '';
+  const capLabel = options.length ? options.slice(-1)[0].label : '';
   return (
     <div className="card" style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)', opacity: enabled ? 1 : 0.6 }}>
       <div>
@@ -525,17 +537,21 @@ function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd }) {
         <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
           {!enabled
             ? 'Requires Premium — own the Premium role or add Premium to your cart.'
-            : maxMonths
-              ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo. Runtime is capped to your Premium access (${capLabel}).`
-              : `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`}
+            : blocked
+              ? 'Less than 1 month of Premium left — extend your Premium subscription to add Premium+.'
+              : maxMonths != null
+                ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo. Runtime is capped to your Premium access (${capLabel}).`
+                : `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`}
         </p>
       </div>
       <div style={{ textAlign: 'right' }}>
-        <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled}>
-          {safe.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-        </select>
-        <button className="btn" disabled={!enabled || active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
-          {active ? 'In cart' : 'Add'}
+        {!blocked && (
+          <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled}>
+            {safe.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </select>
+        )}
+        <button className="btn" disabled={!enabled || active || blocked} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
+          {active ? 'In cart' : blocked ? 'Extend first' : 'Add'}
         </button>
       </div>
     </div>
