@@ -7,6 +7,53 @@ import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { postTranscript, checkTronPayment } from '../lib';
 import { Chat } from './Ticket';
+import { PAYMENT, RUNTIMES, fmt, DEFAULT_CATALOGUE } from '../data';
+
+// Resolve a set of Discord user IDs to live display names via the bot (mod endpoint).
+function useResolvedNames(ids) {
+  const [map, setMap] = useState({});
+  const key = [...new Set((ids || []).filter(Boolean))].sort().join(',');
+  useEffect(() => {
+    const need = key ? key.split(',') : [];
+    if (!need.length) return;
+    (async () => {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const r = await fetch('/api/resolve-names', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ ids: need }),
+        });
+        const d = await r.json();
+        if (r.ok && d.names) setMap((p) => ({ ...p, ...d.names }));
+      } catch (_) {}
+    })();
+  }, [key]);
+  return map;
+}
+
+// Build a userId -> display tag map from tickets + referral owner tags.
+function useUserNames() {
+  const [names, setNames] = useState({});
+  useEffect(() => {
+    const unsubs = [];
+    unsubs.push(onSnapshot(collection(db, 'tickets'), (s) => {
+      setNames((prev) => {
+        const next = { ...prev };
+        s.docs.forEach((d) => { const t = d.data(); if (t.userId && t.userTag) next[t.userId] = t.userTag; });
+        return next;
+      });
+    }, () => {}));
+    unsubs.push(onSnapshot(collection(db, 'referrals'), (s) => {
+      setNames((prev) => {
+        const next = { ...prev };
+        s.docs.forEach((d) => { const r = d.data(); if (r.ownerId && r.ownerTag) next[r.ownerId] = r.ownerTag; });
+        return next;
+      });
+    }, () => {}));
+    return () => unsubs.forEach((u) => u && u());
+  }, []);
+  return names;
+}
 
 // Readable one-time voucher code, e.g. VSX-7K3M-9QF2 (no ambiguous chars).
 function genVoucherCode() {
@@ -14,7 +61,6 @@ function genVoucherCode() {
   const block = () => Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
   return `VSX-${block()}-${block()}`;
 }
-import { PAYMENT, RUNTIMES, fmt, DEFAULT_CATALOGUE } from '../data';
 
 export default function Admin() {
   const { user } = useAuth();
@@ -98,6 +144,7 @@ function AdminDetail({ ticket, modTag, user }) {
           services: ticket.services || [],
           vouchers,
           referralCode: ticket.referralCode || '',
+          balanceUsed: Number(ticket.balanceUsed) || 0,
         }),
       });
       const d = await r.json();
@@ -109,7 +156,8 @@ function AdminDetail({ ticket, modTag, user }) {
       if (d.channels?.length) lines.push('Ticket channels: ' + d.channels.join(', '));
       if (vouchers.length) lines.push('Voucher codes: ' + vouchers.map((v) => v.code).join(', '));
       if (d.voucherDmFailed) lines.push('⚠ Could not DM the voucher (buyer may have DMs closed) — codes: ' + vouchers.map((v) => v.code).join(', '));
-      if (d.referral?.rewarded) lines.push(`Referral: owner rewarded (${d.referral.milestone ? '$25 milestone' : '5%'}, use #${d.referral.uses})`);
+      if (d.referral?.rewarded) lines.push(`Referral: owner credited ${fmt(d.referral.credit || 5)} (use #${d.referral.uses})`);
+      if (d.balanceDeducted > 0) lines.push(`Balance used: ${fmt(d.balanceDeducted)}`);
       if (d.failed?.length) lines.push('Roles failed: ' + d.failed.join(', '));
       if (d.channelErrors?.length) lines.push('Channels failed: ' + d.channelErrors.join(', '));
       if (lines.length) alert(lines.join('\n'));
@@ -472,6 +520,8 @@ function DiscountsEditor() {
 // ---------- Gift voucher management ----------
 function VouchersManager() {
   const [list, setList] = useState([]);
+  const names = useUserNames();
+  const nameOf = (id) => names[id] || id;
   const [gAmount, setGAmount] = useState(25);
   const [gExpiry, setGExpiry] = useState('');
   const [gCode, setGCode] = useState('');
@@ -542,7 +592,7 @@ function VouchersManager() {
           const expired = exp && exp.getTime() < Date.now();
           const status = v.used ? 'USED / OFF' : expired ? 'EXPIRED' : 'ACTIVE';
           const color = v.used || expired ? 'var(--vsx-muted)' : 'var(--vsx-ok)';
-          const origin = v.source === 'referral' ? 'referral 5%' : v.source === 'referral-milestone' ? 'referral $25' : v.source === 'giveaway' ? 'giveaway' : (v.buyerId ? `buyer ${v.buyerId}` : 'gift purchase');
+          const origin = v.source === 'referral' ? 'referral 5%' : v.source === 'referral-milestone' ? 'referral $25' : v.source === 'giveaway' ? 'giveaway' : (v.buyerId ? `buyer ${nameOf(v.buyerId)}` : 'gift purchase');
           return (
             <div key={v.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
               <div style={{ minWidth: 0 }}>
@@ -574,6 +624,10 @@ function SubscriptionsManager() {
   const [rtKey, setRtKey] = useState('1M');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [q, setQ] = useState('');
+  const names = useUserNames();
+  const resolved = useResolvedNames(ents.map((e) => e.userId));
+  const nameOf = (id) => resolved[id] || names[id] || id;
 
   useEffect(() => onSnapshot(collection(db, 'entitlements'),
     (s) => setEnts(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
@@ -626,7 +680,10 @@ function SubscriptionsManager() {
 
   const inp = { marginTop: 4 };
   const lbl = { fontSize: 11, color: 'var(--vsx-muted)', display: 'block' };
-  const sorted = [...ents].filter((e) => e.expiresAt).sort((a, b) => a.expiresAt.toMillis() - b.expiresAt.toMillis());
+  const term = q.trim().toLowerCase();
+  const sorted = [...ents].filter((e) => e.expiresAt)
+    .filter((e) => !term || nameOf(e.userId).toLowerCase().includes(term) || (e.userId || '').includes(term) || (e.label || '').toLowerCase().includes(term))
+    .sort((a, b) => a.expiresAt.toMillis() - b.expiresAt.toMillis());
 
   return (
     <div style={{ display: 'grid', gap: 18, maxWidth: 820 }}>
@@ -653,7 +710,10 @@ function SubscriptionsManager() {
       {msg && <p style={{ fontSize: 13, color: msg.startsWith('✓') ? 'var(--vsx-ok)' : 'var(--vsx-err)' }}>{msg}</p>}
 
       <div className="card">
-        <p className="eyebrow" style={{ marginBottom: 10 }}>Currently active ({sorted.length})</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+          <p className="eyebrow" style={{ margin: 0 }}>Currently active ({sorted.length})</p>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name…" style={{ width: 'auto', minWidth: 180 }} />
+        </div>
         {sorted.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No active subscriptions.</p>}
         {sorted.map((e) => {
           const ms = e.expiresAt.toMillis() - Date.now();
@@ -664,7 +724,7 @@ function SubscriptionsManager() {
               <div style={{ minWidth: 0 }}>
                 <span style={{ fontWeight: 500 }}>{e.label || 'Role'}</span>
                 <span className="mono" style={{ fontSize: 12, marginLeft: 10, color: 'var(--vsx-gold)' }}>{days}d left</span>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>user {e.userId} · until {date}</div>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>{nameOf(e.userId)} · until {date}</div>
               </div>
               <button onClick={() => remove(e)} disabled={busy} style={{ background: 'none', color: 'var(--vsx-err)', fontSize: 12, padding: 0 }}>remove</button>
             </div>
@@ -679,12 +739,20 @@ function SubscriptionsManager() {
 function ReferralsManager() {
   const [list, setList] = useState([]);
   const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
   useEffect(() => onSnapshot(collection(db, 'referrals'),
     (s) => setList(s.docs.map((d) => ({ code: d.id, ...d.data() }))),
     (e) => setErr('Cannot read referrals: ' + e.code)), []);
 
-  const sorted = [...list].sort((a, b) => (b.uses || 0) - (a.uses || 0));
-  const total = sorted.reduce((s, r) => s + (r.uses || 0), 0);
+  const resolved = useResolvedNames(list.map((r) => r.ownerId));
+  const tagById = {}; list.forEach((r) => { if (r.ownerTag) tagById[r.ownerId] = r.ownerTag; });
+  const nameOf = (id) => resolved[id] || tagById[id] || id;
+
+  const term = q.trim().toLowerCase();
+  const sorted = [...list]
+    .filter((r) => !term || nameOf(r.ownerId).toLowerCase().includes(term) || (r.ownerId || '').includes(term) || r.code.toLowerCase().includes(term))
+    .sort((a, b) => (b.uses || 0) - (a.uses || 0));
+  const total = list.reduce((s, r) => s + (r.uses || 0), 0);
   return (
     <div style={{ display: 'grid', gap: 18, maxWidth: 760 }}>
       <div>
@@ -697,16 +765,19 @@ function ReferralsManager() {
       </div>
       {err && <p style={{ color: 'var(--vsx-err)', fontSize: 13 }}>{err}</p>}
       <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name…" style={{ width: 'auto', minWidth: 180 }} />
+        </div>
         {sorted.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No referral codes yet.</p>}
         {sorted.map((r) => (
           <div key={r.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
             <div style={{ minWidth: 0 }}>
-              <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{r.code}</span>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>owner {r.ownerId}</div>
+              <span style={{ fontWeight: 500 }}>{nameOf(r.ownerId)}</span>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-gold)', marginTop: 2 }}>{r.code}</div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
               <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--vsx-gold)' }}>{r.uses || 0}</div>
-              <div style={{ fontSize: 10, color: 'var(--vsx-muted)' }}>uses · {10 - ((r.uses || 0) % 10)} to next $25</div>
+              <div style={{ fontSize: 10, color: 'var(--vsx-muted)' }}>uses · {fmt((r.uses || 0) * 5)} earned</div>
             </div>
           </div>
         ))}

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, addDoc, doc, getDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { useCatalogue } from '../catalogue';
 import { postTicketEmbed } from '../lib';
@@ -15,8 +15,29 @@ export default function Shop() {
   const [basket, setBasket] = useState([]);
   const [consentOpen, setConsentOpen] = useState(false);
   const [codeInput, setCodeInput] = useState('');
-  const [applied, setApplied] = useState(null);   // {type:'percent',code,percent} | {type:'voucher',code,amount}
+  const [applied, setApplied] = useState(null);   // {type:'percent'|'voucher'|'referral',...}
   const [codeError, setCodeError] = useState('');
+  const [balance, setBalance] = useState(0);       // referral $ credit on the user's sheet
+  const [useBalance, setUseBalance] = useState(false);
+  const [entExpiry, setEntExpiry] = useState({});  // pkgId -> latest role expiry (ms) for runtime caps
+  const [trialUsed, setTrialUsed] = useState(false);
+  const [trialMsg, setTrialMsg] = useState('');
+  const [trialBusy, setTrialBusy] = useState(false);
+
+  // Load the user's referral balance, trial-lock and per-package role expiries.
+  useEffect(() => {
+    if (!user?.uid) return;
+    (async () => {
+      try { const b = await getDoc(doc(db, 'balances', user.uid)); setBalance(b.exists() ? (Number(b.data().amount) || 0) : 0); } catch (_) {}
+      try { const t = await getDoc(doc(db, 'trial_used', user.uid)); setTrialUsed(t.exists()); } catch (_) {}
+      try {
+        const snap = await getDocs(query(collection(db, 'entitlements'), where('userId', '==', user.uid)));
+        const byRole = {};
+        snap.docs.forEach((d) => { const e = d.data(); if (e.roleId && e.expiresAt) byRole[e.roleId] = Math.max(byRole[e.roleId] || 0, e.expiresAt.toMillis()); });
+        setEntExpiry(byRole);
+      } catch (_) {}
+    })();
+  }, [user?.uid]);
 
   const applyCode = async () => {
     const code = codeInput.trim().toUpperCase();
@@ -40,7 +61,7 @@ export default function Shop() {
         if (owner === user.uid) { setCodeError("You can't use your own referral code."); return; }
         const used = await getDoc(doc(db, 'referral_used', user.uid));
         if (used.exists()) { setCodeError("You've already used a referral code — one per customer."); return; }
-        setApplied({ type: 'referral', code, ownerId: owner });
+        setApplied({ type: 'referral', code, ownerId: owner, percent: 5 });
         return;
       }
       // 3) percentage discount code?
@@ -75,6 +96,30 @@ export default function Shop() {
   const ownsPremium = owns.includes('premium') || buyingIds.has('premium');
   const premiumInCart = basket.find((b) => b.kind === 'package' && b.pkgId === 'premium');
   const premiumRuntimeKey = premiumInCart ? premiumInCart.runtimeKey : null;
+  const premiumPkg = pkgById('premium');
+
+  // Months remaining on an existing Discord role (from the user's own entitlements).
+  const monthsLeft = (roleId) => {
+    const exp = roleId ? entExpiry[roleId] : null;
+    if (!exp || exp <= Date.now()) return null;
+    return Math.max(1, Math.ceil((exp - Date.now()) / (30 * 24 * 3600 * 1000)));
+  };
+  // Cap a tracker's runtime to: the Premium runtime being bought now, AND/OR the time
+  // still left on the package's own role. null = no cap (full RUNTIMES available).
+  const trackerCap = (p) => {
+    const caps = [];
+    if (premiumInCart) caps.push(runtimeByKey(premiumRuntimeKey).months);
+    const left = monthsLeft(p.roleId);
+    if (left != null) caps.push(left);
+    return caps.length ? Math.max(1, Math.min(...caps)) : null;
+  };
+  const premiumPlusCap = (() => {
+    const caps = [];
+    if (premiumInCart) caps.push(runtimeByKey(premiumRuntimeKey).months);
+    const left = monthsLeft(premiumPkg?.roleId);
+    if (left != null) caps.push(left);
+    return caps.length ? Math.max(1, Math.min(...caps)) : null;
+  })();
 
   // PT eligible: package supports tracker AND (premium owner/buyer, or owns this
   // package's role, or is buying this package now).
@@ -110,10 +155,7 @@ export default function Shop() {
       if (next.some((x) => x.kind === 'premiumplus')) return next; // covered by Premium+
       if (next.some((x) => x.kind === 'trackerOnly' && x.pkgId === item.pkgId)) return next;
     }
-    return [...next, item];
-  });
 
-  const remove = (i) => setBasket((b) => {
     const target = b[i];
     let next = b.filter((_, idx) => idx !== i);
     // Removing the Premium *purchase* — if you don't also own Premium via a role, you lose
@@ -158,23 +200,27 @@ export default function Shop() {
   // codes & vouchers never discount a gift-voucher purchase itself
   // A percent code may be scoped to certain product categories (empty scope = all).
   const codeScope = applied?.type === 'percent' ? (applied.scope || []) : [];
+  const isPercentLike = applied?.type === 'percent' || applied?.type === 'referral';
   const inScope = (x) => x.disc !== 'voucher' && (codeScope.length === 0 || codeScope.includes(x.disc));
-  const codeBase = applied?.type === 'percent'
+  const codeBase = isPercentLike
     ? lineItems.filter(inScope).reduce((s, x) => s + ((x.disc === 'analysis' && user.loyalty) ? x.price * 0.9 : x.price), 0)
     : 0;
-  const codeOff = applied?.type === 'percent' ? Math.round(codeBase * applied.percent) / 100 : 0;
+  const codeOff = isPercentLike ? Math.round(codeBase * applied.percent) / 100 : 0;
   const voucherBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
   const voucherOff = applied?.type === 'voucher'
     ? (applied.percent ? Math.round(voucherBase * applied.percent) / 100 : Math.min(applied.amount, voucherBase))
     : 0;
-  const total = +(afterLoyalty - codeOff - voucherOff).toFixed(2);
+  const beforeBalance = +(afterLoyalty - codeOff - voucherOff).toFixed(2);
+  const balanceApplied = useBalance ? Math.min(balance, beforeBalance) : 0;
+  const total = +(beforeBalance - balanceApplied).toFixed(2);
   const discKeys = [...new Set(lineItems.map((x) => x.disc))];
 
   // Discount lines appended to the order (so the ticket + transcript show them).
   const discountLines = [
     ...(loyaltyOff > 0 ? [{ name: 'Loyalty −10% (analysis)', price: -loyaltyOff }] : []),
-    ...(codeOff > 0 ? [{ name: `Code ${applied.code} −${applied.percent}%`, price: -codeOff }] : []),
+    ...(codeOff > 0 ? [{ name: applied.type === 'referral' ? `Referral ${applied.code} −${applied.percent}%` : `Code ${applied.code} −${applied.percent}%`, price: -codeOff }] : []),
     ...(voucherOff > 0 ? [{ name: `Voucher ${applied.code}`, price: -voucherOff }] : []),
+    ...(balanceApplied > 0 ? [{ name: 'Balance credit', price: -balanceApplied }] : []),
   ];
 
   // Packages the user can add a standalone tracker for.
@@ -219,14 +265,17 @@ export default function Shop() {
             <div style={{ display: 'grid', gap: 10 }}>
               {ownedTrackable.map((p) => (
                 <OwnedTrackerRow key={p.id} pkg={p} price={cat.tracker.perPackage}
-                  maxMonths={premiumInCart ? runtimeByKey(premiumRuntimeKey).months : null} onAdd={add} />
+                  maxMonths={trackerCap(p)} onAdd={add} />
               ))}
             </div>
           </>
         )}
 
         <PremiumPlusCard price={cat.tracker.premiumPlus} enabled={ownsPremium}
-          active={hasPremiumPlus} maxRuntimeKey={premiumRuntimeKey} onAdd={add} />
+          active={hasPremiumPlus} maxMonths={premiumPlusCap} onAdd={add} />
+
+        <FreeTrialCard packages={cat.packages.filter((p) => p.id !== 'premium')}
+          used={trialUsed} busy={trialBusy} msg={trialMsg} onStart={startTrial} />
 
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
@@ -307,6 +356,15 @@ export default function Shop() {
                 {codeError && <p style={{ color: 'var(--vsx-err)', fontSize: 12, marginTop: 6 }}>{codeError}</p>}
               </div>
 
+              {balance > 0 && (
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 12, cursor: 'pointer' }}>
+                  <span style={{ fontSize: 13 }}>
+                    Use my balance <span className="mono" style={{ color: 'var(--vsx-gold)' }}>({fmt(balance)})</span>
+                  </span>
+                  <input type="checkbox" checked={useBalance} onChange={(e) => setUseBalance(e.target.checked)} style={{ width: 18 }} />
+                </label>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, alignItems: 'baseline' }}>
                 <span className="eyebrow">Total</span>
                 <AnimatePresence mode="popLayout">
@@ -355,6 +413,7 @@ export default function Shop() {
               discount: applied?.type === 'percent' ? { code: applied.code, percent: applied.percent, scope: applied.scope || [] } : null,
               redeemedVoucher: applied?.type === 'voucher' ? applied.code : null,
               referralCode: applied?.type === 'referral' ? applied.code : null,
+              balanceUsed: balanceApplied || 0,
               loyalty: loyaltyOff > 0,
               consent: { accepted: true, at: serverTimestamp(), disclaimers: discKeys },
               payment: { method: null, status: 'unpaid' },
@@ -432,12 +491,13 @@ function OwnedTrackerRow({ pkg, price, maxMonths, onAdd }) {
   );
 }
 
-function PremiumPlusCard({ price, enabled, active, maxRuntimeKey, onAdd }) {
-  const maxMonths = maxRuntimeKey ? runtimeByKey(maxRuntimeKey).months : null;
+function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd }) {
   const options = maxMonths ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
-  const [rtKey, setRtKey] = useState(options[0].key);
+  const safe = options.length ? options : [RUNTIMES[0]];
+  const [rtKey, setRtKey] = useState(safe[0].key);
   // clamp selection if the cap shrinks (e.g. Premium runtime changed)
-  const effectiveKey = options.some((r) => r.key === rtKey) ? rtKey : options[0].key;
+  const effectiveKey = safe.some((r) => r.key === rtKey) ? rtKey : safe[0].key;
+  const capLabel = maxMonths ? (RUNTIMES.filter((r) => r.months <= maxMonths).slice(-1)[0]?.label || '') : '';
   return (
     <div className="card" style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)', opacity: enabled ? 1 : 0.6 }}>
       <div>
@@ -447,18 +507,47 @@ function PremiumPlusCard({ price, enabled, active, maxRuntimeKey, onAdd }) {
           {!enabled
             ? 'Requires Premium — own the Premium role or add Premium to your cart.'
             : maxMonths
-              ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo. Choose any runtime up to your Premium (${runtimeByKey(maxRuntimeKey).label}).`
+              ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo. Runtime is capped to your Premium access (${capLabel}).`
               : `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`}
         </p>
       </div>
       <div style={{ textAlign: 'right' }}>
         <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled}>
-          {options.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          {safe.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
         <button className="btn" disabled={!enabled || active} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
           {active ? 'In cart' : 'Add'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function FreeTrialCard({ packages, used, busy, msg, onStart }) {
+  const [pid, setPid] = useState(packages[0]?.id || '');
+  if (!packages.length) return null;
+  return (
+    <div className="card" style={{ marginTop: 18, borderColor: 'var(--vsx-gold-2)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 220, flex: 1 }}>
+          <p className="eyebrow">Free trial</p>
+          <h3 style={{ fontSize: 19, marginTop: 4 }}>Try one package — 5 days free</h3>
+          <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
+            {used
+              ? 'You\u2019ve already used your free trial. 🤍'
+              : 'Pick any analysis package (except Premium) and test it free for 5 days. One trial per customer, ever.'}
+          </p>
+        </div>
+        {!used && (
+          <div style={{ textAlign: 'right' }}>
+            <select value={pid} onChange={(e) => setPid(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={busy}>
+              {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button className="btn" disabled={busy || !pid} onClick={() => onStart(pid)}>{busy ? 'Starting…' : 'Start free trial'}</button>
+          </div>
+        )}
+      </div>
+      {msg && <p style={{ fontSize: 13, marginTop: 10, color: msg.startsWith('✓') ? 'var(--vsx-ok)' : 'var(--vsx-err)' }}>{msg}</p>}
     </div>
   );
 }

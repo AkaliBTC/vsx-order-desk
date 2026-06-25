@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
-import { fmt } from '../data';
+import { fmt, PRESTIGE } from '../data';
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [tx, setTx] = useState(null);
   const [ref, setRef] = useState(null);
   const [refErr, setRefErr] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [balance, setBalance] = useState(0);
+  const [vouchers, setVouchers] = useState([]);
+  const [copied, setCopied] = useState('');
+  const [prestige, setPrestige] = useState({ level: 0, boost: 0 });
+  const [pBusy, setPBusy] = useState(false);
+  const [pMsg, setPMsg] = useState('');
 
   // Past successful transactions (own paid tickets). Single-field query → no index needed.
   useEffect(() => {
@@ -20,6 +25,25 @@ export default function Dashboard() {
       setTx(all.filter((t) => t.status === 'paid')
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
     }, () => setTx([]));
+  }, [user?.uid]);
+
+  // Balance sheet.
+  useEffect(() => {
+    if (!user?.uid) return;
+    (async () => {
+      try { const b = await getDoc(doc(db, 'balances', user.uid)); setBalance(b.exists() ? (Number(b.data().amount) || 0) : 0); } catch (_) {}
+    })();
+  }, [user?.uid]);
+
+  // Vouchers issued to me (active, unused).
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, 'vouchers'), where('ownerId', '==', user.uid));
+    return onSnapshot(q, (snap) => {
+      const now = Date.now();
+      setVouchers(snap.docs.map((d) => ({ code: d.id, ...d.data() }))
+        .filter((v) => !v.used && (!v.expiresAt || v.expiresAt.toMillis() > now)));
+    }, () => setVouchers([]));
   }, [user?.uid]);
 
   // Referral code (created on first load).
@@ -35,8 +59,37 @@ export default function Dashboard() {
     })();
   }, []);
 
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(ref.code); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {}
+  // Prestige status (level + boost + authoritative balance).
+  useEffect(() => {
+    (async () => {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const r = await fetch('/api/prestige', { headers: { Authorization: `Bearer ${idToken}` } });
+        const d = await r.json();
+        if (r.ok) { setPrestige({ level: d.level || 0, boost: d.boost || 0 }); if (typeof d.balance === 'number') setBalance(d.balance); }
+      } catch (_) {}
+    })();
+  }, []);
+
+  const buyPrestige = async (tier) => {
+    setPMsg(''); setPBusy(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/prestige', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ tier }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+      setPrestige({ level: d.level, boost: d.boost });
+      if (typeof d.balance === 'number') setBalance(d.balance);
+      setPMsg(`✓ Prestige ${d.level} unlocked! Commission boost now +${Math.round(d.boost * 100)}%. 🤍`);
+    } catch (e) { setPMsg('Could not buy: ' + e.message); }
+    setPBusy(false);
+  };
+
+  const copy = async (text, id) => {
+    try { await navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(''), 1500); } catch (_) {}
   };
 
   const toNext = ref ? (10 - (ref.uses % 10)) : 0;
@@ -57,19 +110,84 @@ export default function Dashboard() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <span className="mono" style={{ color: 'var(--vsx-gold)', fontSize: 26, fontWeight: 600, letterSpacing: 1 }}>{ref.code}</span>
-              <button className="btn-ghost" onClick={copy} style={{ fontSize: 13 }}>{copied ? 'Copied ✓' : 'Copy'}</button>
+              <button className="btn-ghost" onClick={() => copy(ref.code, 'ref')} style={{ fontSize: 13 }}>{copied === 'ref' ? 'Copied ✓' : 'Copy'}</button>
             </div>
             <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: 0 }}>
-              Share it with friends. When they redeem it at checkout you get <b>5% off</b> your next order —
-              and every <b>10th</b> use earns you a <b>$25</b> gift code by DM.
+              Share it with friends. They get <b>5% off</b> their order, and you get <b>$5 credit</b> on your
+              balance for every redemption — redeem it at checkout or let it stack up.
             </p>
             <div style={{ display: 'flex', gap: 24, marginTop: 4 }}>
-              <div><div style={{ fontSize: 26, fontWeight: 600, color: 'var(--vsx-gold)' }}>{ref.uses}</div><div style={{ fontSize: 11, color: 'var(--vsx-muted)' }}>times used</div></div>
-              <div><div style={{ fontSize: 26, fontWeight: 600 }}>{toNext}</div><div style={{ fontSize: 11, color: 'var(--vsx-muted)' }}>until next $25</div></div>
+              <div><div style={{ fontSize: 26, fontWeight: 600, color: 'var(--vsx-gold)' }}>{fmt(balance)}</div><div style={{ fontSize: 11, color: 'var(--vsx-muted)' }}>balance</div></div>
+              <div><div style={{ fontSize: 26, fontWeight: 600 }}>{ref.uses}</div><div style={{ fontSize: 11, color: 'var(--vsx-muted)' }}>times used</div></div>
             </div>
           </>
         )}
       </div>
+
+      {/* Prestige */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+          <p className="eyebrow" style={{ margin: 0 }}>Prestige</p>
+          <span style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>
+            Commission per referral: <span className="mono" style={{ color: 'var(--vsx-gold)' }}>{fmt(5 * (1 + prestige.boost))}</span>
+            {prestige.level > 0 ? ` · Tier ${prestige.level} (+${Math.round(prestige.boost * 100)}%)` : ''}
+          </span>
+        </div>
+        <div className="card" style={{ display: 'grid', gap: 4 }}>
+          <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '0 0 6px' }}>
+            Spend your referral balance to level up. Each tier boosts the credit you earn per referral.
+            Tiers must be bought in order.
+          </p>
+          {PRESTIGE.map((p) => {
+            const owned = prestige.level >= p.tier;
+            const isNext = prestige.level === p.tier - 1;
+            const canAfford = balance >= p.price;
+            return (
+              <div key={p.tier} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--vsx-line)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontWeight: 600 }}>{p.name}</span>
+                  <span className="mono" style={{ fontSize: 12, marginLeft: 10, color: 'var(--vsx-gold)' }}>+{Math.round(p.boost * 100)}% commission</span>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', marginTop: 2 }}>{fmt(p.price)} balance</div>
+                </div>
+                <div style={{ flexShrink: 0 }}>
+                  {owned ? (
+                    <span className="tag gold" style={{ fontSize: 11 }}>Owned ✓</span>
+                  ) : isNext ? (
+                    <button className="btn" disabled={pBusy || !canAfford} onClick={() => buyPrestige(p.tier)}>
+                      {canAfford ? `Buy · ${fmt(p.price)}` : `Need ${fmt(p.price - balance)} more`}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 11, color: 'var(--vsx-muted)' }}>Buy Prestige {p.tier - 1} first</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {pMsg && <p style={{ fontSize: 13, marginTop: 8, color: pMsg.startsWith('✓') ? 'var(--vsx-ok)' : 'var(--vsx-err)' }}>{pMsg}</p>}
+        </div>
+      </div>
+
+      {/* Your vouchers */}
+      {vouchers.length > 0 && (
+        <div>
+          <p className="eyebrow" style={{ marginBottom: 10 }}>Your vouchers</p>
+          <div className="card" style={{ display: 'grid', gap: 4 }}>
+            {vouchers.map((v) => {
+              const value = v.percent ? `${v.percent}% off` : fmt(Number(v.amount) || 0);
+              const exp = v.expiresAt ? new Date(v.expiresAt.toMillis()).toLocaleDateString() : null;
+              return (
+                <div key={v.code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--vsx-line)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span className="mono" style={{ color: 'var(--vsx-gold)', fontSize: 15 }}>{v.code}</span>
+                    <span className="mono" style={{ fontSize: 12, marginLeft: 10, color: 'var(--vsx-muted)' }}>{value}{exp ? ` · until ${exp}` : ''}</span>
+                  </div>
+                  <button className="btn-ghost" onClick={() => copy(v.code, v.code)} style={{ fontSize: 12, flexShrink: 0 }}>{copied === v.code ? 'Copied ✓' : 'Copy'}</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Transactions */}
       <div>

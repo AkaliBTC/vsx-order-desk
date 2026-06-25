@@ -57,6 +57,23 @@ async function bumpLoyalty(db, userId, expiresMs) {
   } catch (_) { /* non-fatal */ }
 }
 
+// Prestige commission boost (keep role IDs in sync with src/data.js + api/prestige.js).
+const PRESTIGE = [
+  { tier: 1, roleId: '1519733465199808745', boost: 0.10 },
+  { tier: 2, roleId: '1519733547462824057', boost: 0.15 },
+  { tier: 3, roleId: '1519733602831568907', boost: 0.20 },
+];
+async function prestigeBoost(userId) {
+  try {
+    const m = await fetch(`${API}/guilds/${GUILD()}/members/${userId}`, { headers: { Authorization: BOT() } });
+    if (!m.ok) return 0;
+    const roles = (await m.json()).roles || [];
+    let boost = 0;
+    for (const p of PRESTIGE) if (roles.includes(p.roleId)) boost = Math.max(boost, p.boost);
+    return boost;
+  } catch (_) { return 0; }
+}
+
 // Process a referral on a successful purchase: lock the buyer (one referral per life),
 // bump the owner's use count, and credit the owner $5 on their balance sheet.
 // (The buyer's own 5% discount is applied at checkout, not here.)
@@ -76,14 +93,17 @@ async function processReferral(db, referralCode, buyerId) {
     await refRef.set({ uses: newUses }, { merge: true });
     await lockRef.set({ code: referralCode, ownerId: owner, at: admin.firestore.FieldValue.serverTimestamp() });
 
-    // Credit $5 to the owner's balance sheet (atomic increment).
+    // Credit the owner's balance — base $5, boosted by their prestige tier.
+    const boost = await prestigeBoost(owner);
+    const credit = Math.round(REFERRAL_CREDIT * (1 + boost) * 100) / 100;
     await db.collection('balances').doc(owner).set({
-      amount: admin.firestore.FieldValue.increment(REFERRAL_CREDIT),
+      amount: admin.firestore.FieldValue.increment(credit),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
+    const boostNote = boost > 0 ? ` (incl. +${Math.round(boost * 100)}% prestige boost)` : '';
     const msg = `\uD83E\uDD1D Someone just used your referral code \u2014 thank you! \uD83E\uDD0D\n\n` +
-      `**$${REFERRAL_CREDIT} credit** has been added to your VisionX balance. ` +
+      `**$${credit} credit**${boostNote} has been added to your VisionX balance. ` +
       `Redeem it at checkout any time, or let it stack up. Your code has now been used ${newUses}\u00D7.`;
     try {
       const dmCh = await fetch(`${API}/users/@me/channels`, {
@@ -98,7 +118,7 @@ async function processReferral(db, referralCode, buyerId) {
         }).catch(() => {});
       }
     } catch (_) {}
-    out.rewarded = true; out.uses = newUses; out.credit = REFERRAL_CREDIT;
+    out.rewarded = true; out.uses = newUses; out.credit = credit;
   } catch (_) {}
   return out;
 }
