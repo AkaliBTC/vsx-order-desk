@@ -58,12 +58,9 @@ async function bumpLoyalty(db, userId, expiresMs) {
 }
 
 // Process a referral on a successful purchase: lock the buyer (one referral per life),
-// bump the owner's use count, and reward the owner (5% voucher; $25 every 10th use).
-function refCode() {
-  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const block = () => Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
-  return `VSX-${block()}-${block()}`;
-}
+// bump the owner's use count, and credit the owner $5 on their balance sheet.
+// (The buyer's own 5% discount is applied at checkout, not here.)
+const REFERRAL_CREDIT = 5;
 async function processReferral(db, referralCode, buyerId) {
   const out = { rewarded: false };
   try {
@@ -79,19 +76,15 @@ async function processReferral(db, referralCode, buyerId) {
     await refRef.set({ uses: newUses }, { merge: true });
     await lockRef.set({ code: referralCode, ownerId: owner, at: admin.firestore.FieldValue.serverTimestamp() });
 
-    const code = refCode();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 365 * 24 * 3600 * 1000);
-    const base = { used: false, expiresAt, ownerId: owner, createdAt: admin.firestore.FieldValue.serverTimestamp() };
-    let msg;
-    if (newUses % 10 === 0) {
-      await db.collection('vouchers').doc(code).set({ ...base, amount: 25, source: 'referral-milestone' });
-      msg = `\uD83C\uDF89 **Referral milestone!** Your code has now been used ${newUses} times.\n\n` +
-        `Here's a **$25 gift voucher** as a thank-you: \`${code}\`\nRedeem it at checkout \u00B7 single use \u00B7 valid 1 year. \uD83E\uDD0D`;
-    } else {
-      await db.collection('vouchers').doc(code).set({ ...base, percent: 5, source: 'referral' });
-      msg = `\uD83E\uDD1D Someone just used your referral code \u2014 thank you! \uD83E\uDD0D\n\n` +
-        `Here's **5% off** your next order: \`${code}\`\nRedeem it at checkout \u00B7 single use \u00B7 valid 1 year.`;
-    }
+    // Credit $5 to the owner's balance sheet (atomic increment).
+    await db.collection('balances').doc(owner).set({
+      amount: admin.firestore.FieldValue.increment(REFERRAL_CREDIT),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    const msg = `\uD83E\uDD1D Someone just used your referral code \u2014 thank you! \uD83E\uDD0D\n\n` +
+      `**$${REFERRAL_CREDIT} credit** has been added to your VisionX balance. ` +
+      `Redeem it at checkout any time, or let it stack up. Your code has now been used ${newUses}\u00D7.`;
     try {
       const dmCh = await fetch(`${API}/users/@me/channels`, {
         method: 'POST', headers: { Authorization: BOT(), 'Content-Type': 'application/json' },
@@ -105,9 +98,28 @@ async function processReferral(db, referralCode, buyerId) {
         }).catch(() => {});
       }
     } catch (_) {}
-    out.rewarded = true; out.uses = newUses; out.milestone = newUses % 10 === 0;
+    out.rewarded = true; out.uses = newUses; out.credit = REFERRAL_CREDIT;
   } catch (_) {}
   return out;
+}
+
+// Deduct redeemed balance from the buyer's sheet on a confirmed purchase.
+async function deductBalance(db, buyerId, amount) {
+  try {
+    const amt = Number(amount);
+    if (!(amt > 0)) return 0;
+    const ref = db.collection('balances').doc(buyerId);
+    const snap = await ref.get();
+    const have = snap.exists ? (Number(snap.data().amount) || 0) : 0;
+    const use = Math.min(have, amt);
+    if (use > 0) {
+      await ref.set({
+        amount: admin.firestore.FieldValue.increment(-use),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    return use;
+  } catch (_) { return 0; }
 }
 
 export default async function handler(req, res) {
@@ -120,7 +132,7 @@ export default async function handler(req, res) {
     const decoded = await getAdmin().auth().verifyIdToken(idToken);
     if (decoded.mod !== true && decoded.admin !== true) return res.status(403).json({ error: 'not a mod' });
 
-    const { ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '' } = req.body || {};
+    const { ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '', balanceUsed = 0 } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'no userId' });
 
     const granted = [];
@@ -162,9 +174,20 @@ export default async function handler(req, res) {
         channelErrors.push('No DISCORD_TICKET_CATEGORY_ID set');
       } else {
         const modRoles = (process.env.DISCORD_MOD_ROLE_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
-        for (const svc of services) {
+        // Compress multiple purchases of the same service type into ONE ticket channel.
+        const grouped = Object.values(services.reduce((acc, svc) => {
           const sName = typeof svc === 'string' ? svc : svc.name;
-          const sId = typeof svc === 'string' ? '' : svc.id;
+          const sId = typeof svc === 'string' ? '' : (svc.id || '');
+          const key = sId || sName;
+          if (!acc[key]) acc[key] = { name: sName, id: sId, qty: 0 };
+          acc[key].qty += 1;
+          return acc;
+        }, {}));
+        for (const svc of grouped) {
+          const sName = svc.name;
+          const sId = svc.id;
+          const qty = svc.qty;
+          const qtyLabel = qty > 1 ? ` ×${qty}` : '';
           const pingUser = PING_USER[sId] || '';
           const name = chanName(`${sName} ${userTag || userId}`);
           const baseOverwrites = [
@@ -189,7 +212,8 @@ export default async function handler(req, res) {
             channels.push(name);
             const ping = pingUser ? `<@${pingUser}>` : 'Our team';
             const content =
-              `Hey <@${userId}> 👋 — thank you for your trust and your payment for **${sName}**! 🤍\n\n` +
+              `Hey <@${userId}> 👋 — thank you for your trust and your payment for **${sName}${qtyLabel}**! 🤍\n\n` +
+              (qty > 1 ? `You booked **${qty}× ${sName}** — we'll handle all of them right here in this one ticket. ` : '') +
               `${ping} will reach out to you right here in just a moment to get everything started. ` +
               `Feel free to drop any details, goals or questions in the meantime so we can hit the ground running. ⭐`;
             const m = await fetch(`${API}/channels/${ch.id}/messages`, {
@@ -242,8 +266,9 @@ export default async function handler(req, res) {
     }
 
     const referral = await processReferral(getAdmin().firestore(), referralCode, userId);
+    const balanceDeducted = await deductBalance(getAdmin().firestore(), userId, balanceUsed);
 
-    res.json({ granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral });
+    res.json({ granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral, balanceDeducted });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'grant failed' });

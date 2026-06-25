@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     }
     if (!code) return res.status(500).json({ error: 'could not allocate code' });
     await db.collection('referrals').doc(code).set({
-      ownerId: userId, uses: 0, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      ownerId: userId, ownerTag: decoded.tag || '', uses: 0, createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     res.json({ code, uses: 0 });
   } catch (e) {
