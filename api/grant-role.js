@@ -60,8 +60,8 @@ async function bumpLoyalty(db, userId, expiresMs) {
 // Prestige commission boost (keep role IDs in sync with src/data.js + api/prestige.js).
 const PRESTIGE = [
   { tier: 1, roleId: '1519733465199808745', boost: 0.10 },
-  { tier: 2, roleId: '1519733547462824057', boost: 0.15 },
-  { tier: 3, roleId: '1519733602831568907', boost: 0.20 },
+  { tier: 2, roleId: '1519733547462824057', boost: 0.25 },
+  { tier: 3, roleId: '1519733602831568907', boost: 0.50 },
 ];
 async function prestigeBoost(userId) {
   try {

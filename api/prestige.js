@@ -17,8 +17,8 @@ const BOT = () => `Bot ${process.env.DISCORD_BOT_TOKEN}`;
 // Keep in sync with src/data.js PRESTIGE.
 const PRESTIGE = [
   { tier: 1, name: 'Prestige I', price: 500, roleId: '1519733465199808745', boost: 0.10 },
-  { tier: 2, name: 'Prestige II', price: 1000, roleId: '1519733547462824057', boost: 0.15 },
-  { tier: 3, name: 'Prestige III', price: 5000, roleId: '1519733602831568907', boost: 0.20 },
+  { tier: 2, name: 'Prestige II', price: 1000, roleId: '1519733547462824057', boost: 0.25 },
+  { tier: 3, name: 'Prestige III', price: 5000, roleId: '1519733602831568907', boost: 0.50 },
 ];
 
 async function levelOf(userId) {
