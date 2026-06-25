@@ -155,7 +155,26 @@ export default function Shop() {
       if (next.some((x) => x.kind === 'premiumplus')) return next; // covered by Premium+
       if (next.some((x) => x.kind === 'trackerOnly' && x.pkgId === item.pkgId)) return next;
     }
+    return [...next, item];
+  });
 
+  const startTrial = async (packageId) => {
+    setTrialMsg(''); setTrialBusy(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/free-trial', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ packageId }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'failed');
+      setTrialUsed(true);
+      setTrialMsg(`✓ Your ${d.package} trial is live for ${d.days} days — check your DMs! 🤍`);
+    } catch (e) { setTrialMsg('Could not start trial: ' + e.message); }
+    setTrialBusy(false);
+  };
+
+  const remove = (i) => setBasket((b) => {
     const target = b[i];
     let next = b.filter((_, idx) => idx !== i);
     // Removing the Premium *purchase* — if you don't also own Premium via a role, you lose
