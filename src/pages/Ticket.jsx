@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   doc, onSnapshot, updateDoc, collection, addDoc, query, orderBy, serverTimestamp,
 } from 'firebase/firestore';
@@ -11,6 +11,7 @@ import { postProofImage, postPayHint } from '../lib';
 
 export default function Ticket() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [ticket, setTicket] = useState(undefined);
 
@@ -43,6 +44,15 @@ export default function Ticket() {
   return (
     <div className="shell cols-ticket">
       <div style={{ display: 'grid', gap: 20 }}>
+        {(ticket.status === 'closed' || ticket.status === 'paid') && (
+          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderColor: 'var(--vsx-gold-2)' }}>
+            <div>
+              <p className="eyebrow" style={{ margin: 0 }}>All done 🤍</p>
+              <p style={{ fontSize: 13, color: 'var(--vsx-muted)', margin: '4px 0 0' }}>This order is complete. Head back to the shop anytime.</p>
+            </div>
+            <button className="btn" style={{ flexShrink: 0 }} onClick={() => navigate('/')}>← Back to shop</button>
+          </div>
+        )}
         <Summary ticket={ticket} />
         <Payment ticket={ticket} />
       </div>

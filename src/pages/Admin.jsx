@@ -627,7 +627,8 @@ function SubscriptionsManager() {
   const [q, setQ] = useState('');
   const names = useUserNames();
   const resolved = useResolvedNames(ents.map((e) => e.userId));
-  const nameOf = (id) => resolved[id] || names[id] || id;
+  const entTag = {}; ents.forEach((e) => { if (e.userTag) entTag[e.userId] = e.userTag; });
+  const nameOf = (id) => resolved[id] || names[id] || entTag[id] || id;
 
   useEffect(() => onSnapshot(collection(db, 'entitlements'),
     (s) => setEnts(s.docs.map((d) => ({ id: d.id, ...d.data() }))),

@@ -23,6 +23,7 @@ export default function Shop() {
   const [trialUsed, setTrialUsed] = useState(false);
   const [trialMsg, setTrialMsg] = useState('');
   const [trialBusy, setTrialBusy] = useState(false);
+  const [info, setInfo] = useState('');   // info popup (e.g. extend-analysis-to-add-tracker)
 
   // Load the user's referral balance, trial-lock and per-package role expiries.
   useEffect(() => {
@@ -98,12 +99,14 @@ export default function Shop() {
   const premiumRuntimeKey = premiumInCart ? premiumInCart.runtimeKey : null;
   const premiumPkg = pkgById('premium');
 
-  // Raw months remaining on an existing Discord role (from the user's own entitlements).
-  // Fractional — e.g. 0.4 means ~12 days left. null = unknown (no entitlement on record).
+  // Raw months remaining on an existing Discord role (from the user's own entitlements),
+  // with a 1-day tolerance so a tracker can still be added right after buying the analysis
+  // (time drift between the two purchases shouldn't block it). null = unknown.
+  const ONE_DAY = 24 * 3600 * 1000;
   const monthsLeft = (roleId) => {
     const exp = roleId ? entExpiry[roleId] : null;
     if (!exp || exp <= Date.now()) return null;
-    return (exp - Date.now()) / (30 * 24 * 3600 * 1000);
+    return (exp - Date.now() + ONE_DAY) / (30 * ONE_DAY);
   };
   // Cap a tracker's runtime to: the Premium runtime being bought now, AND/OR the time
   // still left on the package's own role. null = no cap (full RUNTIMES available).
@@ -287,17 +290,19 @@ export default function Shop() {
             <div style={{ display: 'grid', gap: 10 }}>
               {ownedTrackable.map((p) => (
                 <OwnedTrackerRow key={p.id} pkg={p} price={cat.tracker.perPackage}
-                  maxMonths={trackerCap(p)} onAdd={add} />
+                  maxMonths={trackerCap(p)} onAdd={add} onInfo={setInfo} />
               ))}
             </div>
           </>
         )}
 
         <PremiumPlusCard price={cat.tracker.premiumPlus} enabled={ownsPremium}
-          active={hasPremiumPlus} maxMonths={premiumPlusCap} onAdd={add} />
+          active={hasPremiumPlus} maxMonths={premiumPlusCap} onAdd={add} onInfo={setInfo} />
 
-        <FreeTrialCard packages={cat.packages.filter((p) => p.id !== 'premium')}
-          used={trialUsed} busy={trialBusy} msg={trialMsg} onStart={startTrial} />
+        {(!trialUsed || trialMsg) && (
+          <FreeTrialCard packages={cat.packages.filter((p) => p.id !== 'premium')}
+            used={trialUsed} busy={trialBusy} msg={trialMsg} onStart={startTrial} />
+        )}
 
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
@@ -446,6 +451,25 @@ export default function Shop() {
           }} />
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {info && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setInfo('')}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 60 }}>
+            <motion.div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440, width: '100%' }}
+              initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}>
+              <p className="eyebrow">Heads up</p>
+              <h3 style={{ fontSize: 20, margin: '6px 0 8px' }}>Extend your analysis first</h3>
+              <p style={{ color: 'var(--vsx-muted)', fontSize: 14, margin: 0 }}>{info}</p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+                <button className="btn" onClick={() => setInfo('')}>Got it</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -493,20 +517,21 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, cover
   );
 }
 
-function OwnedTrackerRow({ pkg, price, maxMonths, onAdd }) {
+function OwnedTrackerRow({ pkg, price, maxMonths, onAdd, onInfo }) {
   const options = maxMonths != null ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
   const blocked = options.length === 0; // role expires in under 1 month → must extend first
   const [rtKey, setRtKey] = useState((options[0] || RUNTIMES[0]).key);
   // keep selection valid if the cap shrinks
   const valid = options.some((r) => r.key === rtKey) ? rtKey : (options[0] || RUNTIMES[0]).key;
+  const infoMsg = `Your ${pkg.name} analysis runs out too soon to add a Portfolio Tracker for it. Please extend your ${pkg.name} analysis subscription first — then you can add the tracker for the matching duration.`;
   return (
     <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
       <div style={{ fontWeight: 500 }}>
         {pkg.name}
-        {blocked && <div style={{ fontSize: 11, color: 'var(--vsx-muted)', fontWeight: 400, marginTop: 2 }}>Less than 1 month left — extend this subscription to add a tracker.</div>}
+        {blocked && <div style={{ fontSize: 11, color: 'var(--vsx-muted)', fontWeight: 400, marginTop: 2 }}>Less than 1 month left — extend to add a tracker.</div>}
       </div>
       {blocked ? (
-        <span style={{ fontSize: 12, color: 'var(--vsx-gold)', flexShrink: 0 }}>Extend to unlock</span>
+        <button className="btn-ghost" style={{ fontSize: 12, color: 'var(--vsx-gold)', flexShrink: 0 }} onClick={() => onInfo && onInfo(infoMsg)}>Extend to unlock ⓘ</button>
       ) : (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <select value={valid} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto' }}>
@@ -521,7 +546,7 @@ function OwnedTrackerRow({ pkg, price, maxMonths, onAdd }) {
   );
 }
 
-function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd }) {
+function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd, onInfo }) {
   const options = maxMonths != null ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
   const blocked = enabled && options.length === 0; // Premium expires in under 1 month
   const safe = options.length ? options : [RUNTIMES[0]];
@@ -550,9 +575,10 @@ function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd }) {
             {safe.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
         )}
-        <button className="btn" disabled={!enabled || active || blocked} onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
+        <button className="btn" disabled={!enabled || active || blocked} onClick={() => blocked ? (onInfo && onInfo('Your Premium analysis runs out too soon to add Premium+. Please extend your Premium subscription first, then add Premium+ for the matching duration.')) : onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
           {active ? 'In cart' : blocked ? 'Extend first' : 'Add'}
         </button>
+        {blocked && <button className="btn-ghost" style={{ fontSize: 11, color: 'var(--vsx-gold)', marginTop: 6, display: 'block', marginLeft: 'auto' }} onClick={() => onInfo && onInfo('Your Premium analysis runs out too soon to add Premium+. Please extend your Premium subscription first, then add Premium+ for the matching duration.')}>Why? ⓘ</button>}
       </div>
     </div>
   );
@@ -616,8 +642,8 @@ function ConsentModal({ discKeys, total, onClose, onConfirm }) {
   const all = discKeys.every((_, i) => checked[i]);
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      style={{ position: 'absolute', inset: 0, minHeight: '100vh', background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', zIndex: 20 }}>
-      <motion.div className="card" style={{ maxWidth: 560, width: '100%' }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto', zIndex: 50 }}>
+      <motion.div className="card" style={{ maxWidth: 560, width: '100%', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', margin: 'auto' }}
         initial={{ opacity: 0, y: 30, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 300, damping: 26 }}>
         <p className="eyebrow">Consent</p>

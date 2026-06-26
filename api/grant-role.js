@@ -176,7 +176,7 @@ export default async function handler(req, res) {
           const ms = Date.now() + g.months * 30 * 24 * 3600 * 1000;
           const expiresAt = admin.firestore.Timestamp.fromMillis(ms);
           await getAdmin().firestore().collection('entitlements').add({
-            userId, roleId: g.roleId, label: g.label || null, ticketId: ticketId || null,
+            userId, userTag: userTag || null, roleId: g.roleId, label: g.label || null, ticketId: ticketId || null,
             expiresAt, createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
           expiries.push(`${g.label} → ${new Date(ms).toISOString().slice(0, 10)}`);
