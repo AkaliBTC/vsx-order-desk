@@ -41,19 +41,26 @@ export default async function handler(req, res) {
     const now = admin.firestore.Timestamp.now();
     const in3d = admin.firestore.Timestamp.fromMillis(Date.now() + 3 * 24 * 3600 * 1000);
 
-    // 1) Expired → remove role + DM the customer.
+    // 1) Expired → remove role + DM the customer, UNLESS another entitlement still keeps
+    //    that same role alive (stacked durations / legacy duplicates).
     const expired = await db.collection('entitlements').where('expiresAt', '<=', now).get();
     let removed = 0;
     for (const d of expired.docs) {
       const e = d.data();
-      await fetch(`${API}/guilds/${process.env.DISCORD_GUILD_ID}/members/${e.userId}/roles/${e.roleId}`, {
-        method: 'DELETE', headers: { Authorization: BOT() },
-      }).catch(() => {});
-      await dm(e.userId,
-        `⌛ Your VisionX **${e.label || 'subscription'}** has now expired and the role was removed.\n\n` +
-        `Thank you for being part of VisionX! 🤍 You can renew anytime here:\n${SHOP()}`);
+      const others = await db.collection('entitlements')
+        .where('userId', '==', e.userId).where('roleId', '==', e.roleId).get();
+      const stillActive = others.docs.some((o) => o.id !== d.id
+        && o.data().expiresAt && o.data().expiresAt.toMillis() > Date.now());
+      if (!stillActive) {
+        await fetch(`${API}/guilds/${process.env.DISCORD_GUILD_ID}/members/${e.userId}/roles/${e.roleId}`, {
+          method: 'DELETE', headers: { Authorization: BOT() },
+        }).catch(() => {});
+        await dm(e.userId,
+          `⌛ Your VisionX **${e.label || 'subscription'}** has now expired and the role was removed.\n\n` +
+          `Thank you for being part of VisionX! 🤍 You can renew anytime here:\n${SHOP()}`);
+        removed += 1;
+      }
       await d.ref.delete();
-      removed += 1;
     }
 
     // 2) Expiring within ~3 days, not yet reminded → DM once.

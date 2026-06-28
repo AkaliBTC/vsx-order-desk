@@ -621,7 +621,8 @@ function SubscriptionsManager() {
   const [cat, setCat] = useState(DEFAULT_CATALOGUE);
   const [uid, setUid] = useState('');
   const [roleIdx, setRoleIdx] = useState('0');
-  const [rtKey, setRtKey] = useState('1M');
+  const [durVal, setDurVal] = useState(1);
+  const [durUnit, setDurUnit] = useState('months');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [q, setQ] = useState('');
@@ -662,11 +663,13 @@ function SubscriptionsManager() {
     const opt = roleOptions[Number(roleIdx)];
     if (!userId) { setMsg('Enter a Discord user ID.'); return; }
     if (!opt) { setMsg('Pick a role.'); return; }
-    const months = (RUNTIMES.find((r) => r.key === rtKey) || { months: 1 }).months;
+    const val = Number(durVal);
+    if (!(val > 0)) { setMsg('Enter a duration above 0.'); return; }
+    const durationDays = durUnit === 'months' ? val * 30 : val;
     setBusy(true);
     try {
-      await call({ action: 'add', userId, roleId: opt.roleId, label: opt.label, months });
-      setUid(''); setMsg(`✓ Granted ${opt.label} to ${userId} for ${months} month(s).`);
+      await call({ action: 'add', userId, roleId: opt.roleId, label: opt.label, durationDays });
+      setUid(''); setMsg(`✓ Granted ${opt.label} to ${userId} for ${val} ${durUnit} (stacks onto any remaining time).`);
     } catch (e) { setMsg('Failed: ' + e.message); }
     setBusy(false);
   };
@@ -694,7 +697,7 @@ function SubscriptionsManager() {
         <p style={{ color: 'var(--vsx-muted)', fontSize: 13 }}>Grant or remove a role + its expiry manually. Removing takes the Discord role away immediately.</p>
       </div>
 
-      <div className="card" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr 1fr auto', gap: 12, alignItems: 'end' }}>
+      <div className="card" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.3fr 0.7fr 0.9fr auto', gap: 12, alignItems: 'end' }}>
         <div><label style={lbl}>Discord user ID</label><input style={inp} value={uid} onChange={(e) => setUid(e.target.value)} placeholder="123456789012345678" /></div>
         <div><label style={lbl}>Role</label>
           <select style={inp} value={roleIdx} onChange={(e) => setRoleIdx(e.target.value)}>
@@ -702,8 +705,12 @@ function SubscriptionsManager() {
           </select>
         </div>
         <div><label style={lbl}>Duration</label>
-          <select style={inp} value={rtKey} onChange={(e) => setRtKey(e.target.value)}>
-            {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          <input style={inp} type="number" min="1" value={durVal} onChange={(e) => setDurVal(e.target.value)} />
+        </div>
+        <div><label style={lbl}>Unit</label>
+          <select style={inp} value={durUnit} onChange={(e) => setDurUnit(e.target.value)}>
+            <option value="days">Days</option>
+            <option value="months">Months</option>
           </select>
         </div>
         <button className="btn" disabled={busy} onClick={add}>Grant</button>

@@ -142,6 +142,39 @@ async function deductBalance(db, buyerId, amount) {
   } catch (_) { return 0; }
 }
 
+// Add/extend an entitlement for (userId, roleId) ADDITIVELY: if the user still has time
+// left on that role, the new duration stacks on top of the remaining time instead of
+// overwriting it. Consolidates any duplicate entitlements into one. Returns new expiry ms.
+async function upsertEntitlement(db, { userId, userTag, roleId, label, durationMs, ticketId }) {
+  const now = Date.now();
+  const snap = await db.collection('entitlements')
+    .where('userId', '==', userId).where('roleId', '==', roleId).get();
+  let latest = 0, keep = null;
+  snap.docs.forEach((d) => {
+    const exp = d.data().expiresAt ? d.data().expiresAt.toMillis() : 0;
+    if (exp > latest) { latest = exp; keep = d; }
+  });
+  const base = latest > now ? latest : now;          // stack onto remaining time
+  const newMs = base + durationMs;
+  const expiresAt = admin.firestore.Timestamp.fromMillis(newMs);
+  if (keep) {
+    await keep.ref.set({
+      userId, userTag: userTag || keep.data().userTag || null,
+      roleId, label: label || keep.data().label || null,
+      ticketId: ticketId || keep.data().ticketId || null,
+      expiresAt, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    // remove any duplicate entitlements for this role, keeping one consolidated record
+    await Promise.all(snap.docs.filter((d) => d.id !== keep.id).map((d) => d.ref.delete()));
+  } else {
+    await db.collection('entitlements').add({
+      userId, userTag: userTag || null, roleId, label: label || null, ticketId: ticketId || null,
+      expiresAt, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  return newMs;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
   try {
@@ -171,16 +204,14 @@ export default async function handler(req, res) {
       });
       if (r.ok || r.status === 204) {
         granted.push(g.label);
-        // Expiry record for the daily auto-revoke cron.
+        // Expiry record for the daily auto-revoke cron — stacks onto any remaining time.
         try {
-          const ms = Date.now() + g.months * 30 * 24 * 3600 * 1000;
-          const expiresAt = admin.firestore.Timestamp.fromMillis(ms);
-          await getAdmin().firestore().collection('entitlements').add({
-            userId, userTag: userTag || null, roleId: g.roleId, label: g.label || null, ticketId: ticketId || null,
-            expiresAt, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          const durationMs = g.months * 30 * 24 * 3600 * 1000;
+          const newMs = await upsertEntitlement(getAdmin().firestore(), {
+            userId, userTag, roleId: g.roleId, label: g.label, durationMs, ticketId,
           });
-          expiries.push(`${g.label} → ${new Date(ms).toISOString().slice(0, 10)}`);
-          await bumpLoyalty(getAdmin().firestore(), userId, ms);
+          expiries.push(`${g.label} → ${new Date(newMs).toISOString().slice(0, 10)}`);
+          await bumpLoyalty(getAdmin().firestore(), userId, newMs);
         } catch (e) { expiryWarning = e.message; }
       } else {
         failed.push(`${g.label} (discord ${r.status})`);
