@@ -527,14 +527,16 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, cover
           {soon ? 'Coming soon' : fmt(price)}
         </motion.div>
       </AnimatePresence>
-      {allowTracker && !inCart && !covered && (
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
-          + Portfolio Tracker ({fmt(trackerPrice)}/mo)
-        </label>
-      )}
-      <motion.button className="btn" disabled={disabled} whileTap={{ scale: 0.96 }}
-        onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>{label}</motion.button>
+      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {allowTracker && !inCart && !covered && (
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
+            + Portfolio Tracker ({fmt(trackerPrice)}/mo)
+          </label>
+        )}
+        <motion.button className="btn" disabled={disabled} whileTap={{ scale: 0.96 }}
+          onClick={() => onAdd({ kind: 'package', pkgId: pkg.id, runtimeKey: rtKey, withTracker: tracker })}>{label}</motion.button>
+      </div>
     </motion.div>
   );
 }
@@ -765,7 +767,7 @@ function DeepDiveInfo({ onClose }) {
 
 const COACHES = {
   'coach-filip': {
-    tier: 'Foundation', name: 'Filip', price: '$150', unit: 'hour',
+    tier: 'Essential', name: 'Filip', price: '$150', unit: 'hour',
     items: [
       ['Elliott Wave Basics', 'Impulse · Zigzag · Flat · Triangle · Diagonal'],
       ['Fibonacci in EW', 'Retracements & extensions for all different waves'],
