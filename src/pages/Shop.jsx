@@ -710,7 +710,7 @@ const DD_FA = [
 
 function CoverageColumn({ eyebrow, title, items }) {
   return (
-    <div className="card" style={{ background: 'var(--vsx-charcoal-3)', display: 'grid', gap: 0, alignContent: 'start' }}>
+    <div className="card" style={{ background: 'var(--vsx-charcoal-3)', display: 'grid', gap: 0, alignContent: 'start', height: '100%' }}>
       <p className="eyebrow" style={{ margin: '0 0 6px' }}>{eyebrow}</p>
       <h3 className="display" style={{ fontSize: 26, margin: '0 0 12px', letterSpacing: 0.5 }}>{title}</h3>
       {items.map(([name, sub], i) => (
@@ -747,7 +747,7 @@ function DeepDiveInfo({ onClose }) {
           One asset. Every angle. <span style={{ color: 'var(--vsx-gold-2)' }}>Institutional-grade market reports.</span>
         </p>
 
-        <div className="cols-2" style={{ alignItems: 'start' }}>
+        <div className="cols-2" style={{ alignItems: 'stretch' }}>
           <CoverageColumn eyebrow="Technical Analysis" title="TA Coverage" items={DD_TA} />
           <CoverageColumn eyebrow="Fundamental Analysis" title="FA Coverage" items={DD_FA} />
         </div>
