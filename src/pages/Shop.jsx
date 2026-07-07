@@ -24,6 +24,7 @@ export default function Shop() {
   const [trialMsg, setTrialMsg] = useState('');
   const [trialBusy, setTrialBusy] = useState(false);
   const [info, setInfo] = useState('');   // info popup (e.g. extend-analysis-to-add-tracker)
+  const [deepDiveOpen, setDeepDiveOpen] = useState(false);
 
   // Load the user's referral balance, trial-lock and per-package role expiries.
   useEffect(() => {
@@ -316,6 +317,12 @@ export default function Shop() {
               <div>
                 <h3 style={{ fontSize: 18 }}>{s.name}</h3>
                 <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>{s.desc}</p>
+                {s.id === 'deepdive' && (
+                  <button onClick={() => setDeepDiveOpen(true)}
+                    style={{ background: 'none', border: 'none', padding: '6px 0 0', color: 'var(--vsx-gold)', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+                    What's included ↗
+                  </button>
+                )}
               </div>
               <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                 <div className="mono display" style={{ fontSize: 18, color: 'var(--vsx-gold)' }}>
@@ -469,6 +476,10 @@ export default function Shop() {
             </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deepDiveOpen && <DeepDiveInfo onClose={() => setDeepDiveOpen(false)} />}
       </AnimatePresence>
     </div>
   );
@@ -665,6 +676,76 @@ function ConsentModal({ discKeys, total, onClose, onConfirm }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
           <motion.button className="btn" whileTap={{ scale: 0.97 }} disabled={!all} onClick={onConfirm}>Open ticket · {fmt(total)}</motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+const DD_TA = [
+  ['Multi-Timeframe Elliott Wave', 'HTF structure · MTF/LTF refinement · Alt scenario'],
+  ['Full Indicator Stack', 'MACD · RSI · SQZ MOM · ADX · Ichimoku'],
+  ['Trend & Width Signals', 'Supertrend · McClellan · AK Cycle Confirmation'],
+  ['Time & Cycle Analysis', 'Sine curve LTF · Time cycles HTF · Seasonality'],
+  ['Harmonics & Chart Patterns', 'Log chart analysis · Key level commentary'],
+];
+const DD_FA = [
+  ['Base Fundamentals', 'Snapshot with metric commentary'],
+  ['Institutions & Smart Money', 'Ownership · Allocations · Analyst consensus'],
+  ['On-Chain & Derivatives', 'OI · Funding · Premium · Liquidations'],
+  ['Whale & Wallet Flows', 'Notable positions · Institutional exposure'],
+  ['Sector Cycle & Catalysts', 'RRG rotation · Relevant news & events'],
+];
+
+function CoverageColumn({ eyebrow, title, items }) {
+  return (
+    <div className="card" style={{ background: 'var(--vsx-charcoal-3)', display: 'grid', gap: 0, alignContent: 'start' }}>
+      <p className="eyebrow" style={{ margin: '0 0 6px' }}>{eyebrow}</p>
+      <h3 className="display" style={{ fontSize: 26, margin: '0 0 12px', letterSpacing: 0.5 }}>{title}</h3>
+      {items.map(([name, sub], i) => (
+        <div key={name} style={{ display: 'flex', gap: 10, padding: '11px 0', borderTop: i === 0 ? 'none' : '1px solid var(--vsx-line)' }}>
+          <span style={{ color: 'var(--vsx-gold)', fontSize: 12, lineHeight: '20px' }}>◆</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{name}</div>
+            <div className="mono" style={{ color: 'var(--vsx-muted)', fontSize: 12, marginTop: 2 }}>{sub}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DeepDiveInfo({ onClose }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto', zIndex: 60 }}>
+      <motion.div className="card" onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 760, width: '100%', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', margin: 'auto', borderColor: 'var(--vsx-gold-2)' }}
+        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 280, damping: 26 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <p className="eyebrow" style={{ margin: 0 }}>VisionX Market Analytics</p>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--vsx-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
+        </div>
+        <h2 className="display" style={{ fontSize: 46, lineHeight: 1, margin: '6px 0 6px',
+          background: 'linear-gradient(180deg, #F5D87A 0%, #D4AF37 55%, #B99C64 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          DEEP DIVES
+        </h2>
+        <p style={{ fontSize: 15, margin: '0 0 20px' }}>
+          One asset. Every angle. <span style={{ color: 'var(--vsx-gold-2)' }}>Institutional-grade market reports.</span>
+        </p>
+
+        <div className="cols-2" style={{ alignItems: 'start' }}>
+          <CoverageColumn eyebrow="Technical Analysis" title="TA Coverage" items={DD_TA} />
+          <CoverageColumn eyebrow="Fundamental Analysis" title="FA Coverage" items={DD_FA} />
+        </div>
+
+        <p className="mono" style={{ textAlign: 'center', color: 'var(--vsx-muted)', fontSize: 11, letterSpacing: 1, margin: '20px 0 6px' }}>
+          AVAILABLE VIA DISCORD · IN-DEPTH MARKET REPORTS · TA + FA
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+          <button className="btn" onClick={onClose}>Close</button>
         </div>
       </motion.div>
     </motion.div>
