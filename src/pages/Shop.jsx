@@ -25,6 +25,7 @@ export default function Shop() {
   const [trialBusy, setTrialBusy] = useState(false);
   const [info, setInfo] = useState('');   // info popup (e.g. extend-analysis-to-add-tracker)
   const [deepDiveOpen, setDeepDiveOpen] = useState(false);
+  const [coachOpen, setCoachOpen] = useState(null);   // coach service id or null
 
   // Load the user's referral balance, trial-lock and per-package role expiries.
   useEffect(() => {
@@ -323,6 +324,12 @@ export default function Shop() {
                     What's included ↗
                   </button>
                 )}
+                {s.id.startsWith('coach-') && (
+                  <button onClick={() => setCoachOpen(s.id)}
+                    style={{ background: 'none', border: 'none', padding: '6px 0 0', color: 'var(--vsx-gold)', fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+                    What's included ↗
+                  </button>
+                )}
               </div>
               <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                 <div className="mono display" style={{ fontSize: 18, color: 'var(--vsx-gold)' }}>
@@ -480,6 +487,10 @@ export default function Shop() {
 
       <AnimatePresence>
         {deepDiveOpen && <DeepDiveInfo onClose={() => setDeepDiveOpen(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {coachOpen && <CoachingInfo coach={coachOpen} onClose={() => setCoachOpen(null)} />}
       </AnimatePresence>
     </div>
   );
@@ -743,6 +754,104 @@ function DeepDiveInfo({ onClose }) {
 
         <p className="mono" style={{ textAlign: 'center', color: 'var(--vsx-muted)', fontSize: 11, letterSpacing: 1, margin: '20px 0 6px' }}>
           AVAILABLE VIA DISCORD · IN-DEPTH MARKET REPORTS · TA + FA
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+const COACHES = {
+  'coach-filip': {
+    tier: 'Foundation', name: 'Filip', price: '$150', unit: 'hour',
+    items: [
+      ['Elliott Wave Basics', 'Impulse · Zigzag · Flat · Triangle · Diagonal'],
+      ['Fibonacci in EW', 'Retracements & extensions for all different waves'],
+      ['TA Foundations', 'Trend & trend switch · Trendlines · S/R · Dow Theory · How price action develops'],
+      ['Portfolio Allocation', 'Relative strength approach'],
+    ],
+  },
+  'coach-michael': {
+    tier: 'Advanced', name: 'Michael', price: '$250', unit: 'hour',
+    items: [
+      ['Deep Dive Elliott Wave', 'Classic · Complex · AK Tweaks'],
+      ['Smart Money Concepts', 'BoS · CHoCH · EQL/EQH · FVG · OB · BFVG'],
+      ['Chart Patterns', 'HnS · Wedges & more'],
+      ['Market Width', ''],
+    ],
+    bonus: {
+      title: '+ Bonus · Fundamentals',
+      lines: [
+        ['Stocks', 'Finviz: short float, insider, institutional'],
+        ['Crypto', 'Velo · Coinalyze · Coinglass · Aggr'],
+      ],
+    },
+  },
+  'coach-akali': {
+    tier: 'Expert', name: 'Akali', price: '$350', unit: 'hour',
+    items: [
+      ['Indicators', 'Advanced indicator work across timeframes'],
+      ['Time Analysis', 'Time-based cycle methodology'],
+      ['Harmonics', 'Harmonic pattern trading'],
+    ],
+  },
+};
+
+function CoachingInfo({ coach, onClose }) {
+  const c = COACHES[coach];
+  if (!c) return null;
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto', zIndex: 60 }}>
+      <motion.div className="card" onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 520, width: '100%', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', margin: 'auto', borderColor: 'var(--vsx-gold-2)' }}
+        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 280, damping: 26 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <p className="eyebrow" style={{ margin: 0 }}>VisionX Market Analytics</p>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--vsx-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
+        </div>
+        <h2 className="display" style={{ fontSize: 42, lineHeight: 1, margin: '6px 0 6px',
+          background: 'linear-gradient(180deg, #F5D87A 0%, #D4AF37 55%, #B99C64 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          COACHING
+        </h2>
+        <p style={{ fontSize: 14, margin: '0 0 20px' }}>
+          1-on-1 sessions. <span style={{ color: 'var(--vsx-gold-2)' }}>Learn the craft from our analysts.</span>
+        </p>
+
+        <div className="card" style={{ background: 'var(--vsx-charcoal-3)' }}>
+          <p className="eyebrow" style={{ margin: '0 0 4px' }}>{c.tier}</p>
+          <h3 className="display" style={{ fontSize: 34, margin: '0 0 6px', letterSpacing: 0.5 }}>{c.name}</h3>
+          <div className="mono" style={{ fontSize: 22, color: 'var(--vsx-gold)', marginBottom: 4 }}>
+            {c.price}<span style={{ fontSize: 13, color: 'var(--vsx-muted)' }}> / {c.unit}</span>
+          </div>
+          <div style={{ borderTop: '1px solid var(--vsx-gold-2)', opacity: 0.5, margin: '10px 0 2px' }} />
+          {c.items.map(([name, sub], i) => (
+            <div key={name} style={{ display: 'flex', gap: 10, padding: '11px 0', borderTop: i === 0 ? 'none' : '1px solid var(--vsx-line)' }}>
+              <span style={{ color: 'var(--vsx-gold)', fontSize: 12, lineHeight: '20px' }}>◆</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{name}</div>
+                {sub && <div className="mono" style={{ color: 'var(--vsx-muted)', fontSize: 12, marginTop: 2 }}>{sub}</div>}
+              </div>
+            </div>
+          ))}
+          {c.bonus && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--vsx-line)' }}>
+              <p className="eyebrow" style={{ margin: '0 0 8px' }}>{c.bonus.title}</p>
+              {c.bonus.lines.map(([k, v]) => (
+                <div key={k} className="mono" style={{ fontSize: 12, color: 'var(--vsx-muted)', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--vsx-offwhite)' }}>{k}</span> — {v}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <p className="mono" style={{ textAlign: 'center', color: 'var(--vsx-muted)', fontSize: 11, letterSpacing: 1, margin: '20px 0 6px' }}>
+          AVAILABLE VIA DISCORD · TA & FA COACHING · 1-ON-1
         </p>
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
           <button className="btn" onClick={onClose}>Close</button>
