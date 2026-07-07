@@ -84,7 +84,7 @@ export const DEFAULT_CATALOGUE = {
   ],
   services: [
     { id: 'deepdive', name: 'Deep Dive', desc: 'In-depth single-asset report (TA + FA).', price: 100, unit: '' },
-    { id: 'coach-filip', name: 'Coaching · Filip', desc: 'Foundation', price: 150, unit: '/hr' },
+    { id: 'coach-filip', name: 'Coaching · Filip', desc: 'Essential', price: 150, unit: '/hr' },
     { id: 'coach-michael', name: 'Coaching · Michael', desc: 'Advanced', price: 250, unit: '/hr' },
     { id: 'coach-akali', name: 'Coaching · Akali', desc: 'Expert', price: 350, unit: '/hr' },
   ],
