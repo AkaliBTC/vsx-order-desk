@@ -170,7 +170,7 @@ export default function Shop() {
     setTrialMsg(''); setTrialBusy(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const r = await fetch('/api/free-trial', {
+      const r = await fetch('/api/me?action=trial', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ packageId }),
       });

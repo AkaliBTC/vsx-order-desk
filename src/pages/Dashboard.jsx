@@ -52,7 +52,7 @@ export default function Dashboard() {
     (async () => {
       try {
         const idToken = await auth.currentUser.getIdToken();
-        const r = await fetch('/api/referral', { method: 'POST', headers: { Authorization: `Bearer ${idToken}` } });
+        const r = await fetch('/api/me?action=referral', { method: 'POST', headers: { Authorization: `Bearer ${idToken}` } });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'failed');
         setRef(d);
@@ -65,7 +65,7 @@ export default function Dashboard() {
     (async () => {
       try {
         const idToken = await auth.currentUser.getIdToken();
-        const r = await fetch('/api/prestige', { headers: { Authorization: `Bearer ${idToken}` } });
+        const r = await fetch('/api/me?action=prestige', { headers: { Authorization: `Bearer ${idToken}` } });
         const d = await r.json();
         if (r.ok) { setPrestige({ level: d.level || 0, boost: d.boost || 0 }); if (typeof d.balance === 'number') setBalance(d.balance); }
       } catch (_) {}
@@ -76,7 +76,7 @@ export default function Dashboard() {
     setPMsg(''); setPBusy(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const r = await fetch('/api/prestige', {
+      const r = await fetch('/api/me?action=prestige', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ tier }),
       });

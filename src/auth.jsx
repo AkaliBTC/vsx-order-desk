@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
       // takes effect on the next page load — no re-login required.
       try {
         const idToken = await fbUser.getIdToken();
-        const r = await fetch('/api/my-roles', {
+        const r = await fetch('/api/me?action=roles', {
           method: 'POST', headers: { Authorization: `Bearer ${idToken}` },
         });
         if (r.ok) {

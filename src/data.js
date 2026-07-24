@@ -34,7 +34,7 @@ export const coachBulkPercent = (n) => {
 
 // Prestige tiers — bought ONLY with referral balance, and only one level at a time
 // (must own the previous tier first). Each tier boosts your referral commission.
-// IMPORTANT: keep this in sync with the copy in api/prestige.js + api/grant-role.js.
+// IMPORTANT: keep this in sync with the copy in api/me.js + api/grant-role.js.
 export const PRESTIGE = [
   { tier: 1, name: 'Prestige I', price: 500, roleId: '1519733465199808745', boost: 0.10 },
   { tier: 2, name: 'Prestige II', price: 1000, roleId: '1519733547462824057', boost: 0.25 },
