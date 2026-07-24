@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   doc, onSnapshot, updateDoc, collection, addDoc, query, orderBy, serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { PAYMENT, fmt } from '../data';
 import { postProofImage, postPayHint } from '../lib';
@@ -256,6 +256,16 @@ export function Chat({ ticket, user }) {
       body,
       at: serverTimestamp(),
     });
+    // Team replies ping the customer on Discord (server throttles to 1 DM / 15 min).
+    if (user.isMod) {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        await fetch('/api/ticket-dm', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ ticketId: ticket.id }),
+        });
+      } catch (_) { /* non-fatal — the message is already posted */ }
+    }
   };
 
   return (

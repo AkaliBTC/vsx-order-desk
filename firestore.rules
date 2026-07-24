@@ -3,7 +3,63 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function isSignedIn() { return request.auth != null; }
-    function isMod() { return isSignedIn() && request.auth.token.mod == true; }
+    function isMod() { return isSignedIn() && (request.auth.token.mod == true || request.auth.token.admin == true); }
+
+    // Live catalogue (prices/texts/roles). Anyone signed in reads; mods write.
+    match /config/{id} {
+      allow read: if isSignedIn();
+      allow write: if isMod();
+    }
+
+    // Role entitlements (temp-role expiry). Server (Admin SDK) writes; mods read all,
+    // and a user may read their own (used to cap tracker runtime to remaining time).
+    match /entitlements/{id} {
+      allow read: if isMod() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Referral codes (one per user). Validate by exact code; mods list for the dashboard.
+    match /referrals/{code} {
+      allow get: if isSignedIn();
+      allow list: if isMod();
+      allow write: if false; // created/updated server-side only
+    }
+
+    // Lifetime "one referral per user" lock. A user may read their own; server writes.
+    match /referral_used/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if isMod();
+      allow write: if false;
+    }
+
+    // Referral balance sheet ($ credit per user). User reads own; server writes.
+    match /balances/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if isMod();
+      allow write: if false;
+    }
+
+    // Free-trial lifetime lock (one trial ever). User reads own; server writes.
+    match /trial_used/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if isMod();
+      allow write: if false;
+    }
+
+    // Discount codes: a signed-in user can validate one by its exact code (get),
+    // but cannot list them all. Mods manage them.
+    match /discounts/{code} {
+      allow get: if isSignedIn();
+      allow list, write: if isMod();
+    }
+
+    // Gift vouchers ($ balance or % off, single-use). Validate by exact code; mods manage;
+    // a user may list the ones issued to them (dashboard).
+    match /vouchers/{code} {
+      allow get: if isSignedIn();
+      allow list: if isMod() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow write: if isMod();
+    }
 
     // Catalogue is read-only to clients; managed via console / functions.
     match /products/{id} {

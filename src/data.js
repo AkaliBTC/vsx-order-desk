@@ -21,6 +21,17 @@ export const RUNTIMES = [
 ];
 export const runtimeByKey = (k) => RUNTIMES.find((r) => r.key === k) || RUNTIMES[0];
 
+// Coaching bulk discount — logistic curve, all coachings counted together
+// (not per coach). No discount below 3 sessions; saturates just under 10%.
+//   d(n) = 0                              for n < 3
+//   d(n) = 10 / (1 + e^(-0.59 * (n - 5))) for n >= 3
+// 3 → 2.35% · 4 → 3.57% · 5 → 5.00% · 6 → 6.43% · 7 → 7.65% · 8 → 8.54% · 10 → 9.50%
+export const COACH_BULK_MIN = 3;
+export const coachBulkPercent = (n) => {
+  if (!(n >= COACH_BULK_MIN)) return 0;
+  return 10 / (1 + Math.exp(-0.59 * (n - 5)));
+};
+
 // Prestige tiers — bought ONLY with referral balance, and only one level at a time
 // (must own the previous tier first). Each tier boosts your referral commission.
 // IMPORTANT: keep this in sync with the copy in api/prestige.js + api/grant-role.js.

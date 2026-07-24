@@ -6,7 +6,7 @@ import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { useCatalogue } from '../catalogue';
 import { postTicketEmbed } from '../lib';
-import { RUNTIMES, DISCLAIMERS, DISCLAIMER_PDF, runtimeByKey, fmt } from '../data';
+import { RUNTIMES, DISCLAIMERS, DISCLAIMER_PDF, runtimeByKey, fmt, coachBulkPercent, COACH_BULK_MIN } from '../data';
 
 export default function Shop() {
   const { user } = useAuth();
@@ -95,17 +95,8 @@ export default function Shop() {
   const svcById = (id) => cat.services.find((s) => s.id === id);
 
   const buyingIds = new Set(basket.filter((b) => b.kind === 'package').map((b) => b.pkgId));
-  // "All-packages tracker" is in the cart either as a standalone item (owned-Premium path)
-  // or riding along on a Premium purchase via its tracker checkbox.
-  const hasPremiumPlus = basket.some((b) => b.kind === 'premiumplus'
-    || (b.kind === 'package' && b.pkgId === 'premium' && b.withTracker));
+  const hasPremiumPlus = basket.some((b) => b.kind === 'premiumplus');
   const ownsPremium = owns.includes('premium') || buyingIds.has('premium');
-  // Tracker $/mo for a package: per-package override from the catalogue, else the
-  // global default — Premium falls back to the all-packages price.
-  const ptPriceOf = (p) => {
-    if (p && p.ptPrice != null && p.ptPrice !== '') return Number(p.ptPrice);
-    return p && p.id === 'premium' ? cat.tracker.premiumPlus : cat.tracker.perPackage;
-  };
   const premiumInCart = basket.find((b) => b.kind === 'package' && b.pkgId === 'premium');
   const premiumRuntimeKey = premiumInCart ? premiumInCart.runtimeKey : null;
   const premiumPkg = pkgById('premium');
@@ -152,19 +143,13 @@ export default function Shop() {
     if (item.kind === 'package' && item.pkgId === 'premium') {
       // Premium = all analysis packages → remove the individual analysis packages
       next = next.filter((x) => !(x.kind === 'package' && x.pkgId !== 'premium'));
-      // Premium bought WITH tracker = tracker for all → individual trackers and any
-      // standalone all-packages tracker item become redundant.
-      if (item.withTracker) {
-        next = next.filter((x) => x.kind !== 'trackerOnly' && x.kind !== 'premiumplus');
-      }
     }
     if (item.kind === 'package' && item.pkgId !== 'premium') {
       if (next.some((x) => x.kind === 'package' && x.pkgId === 'premium')) return next; // already covered
       if (next.some((x) => x.kind === 'package' && x.pkgId === item.pkgId)) return next; // no duplicate
     }
     if (item.kind === 'premiumplus') {
-      if (next.some((x) => x.kind === 'premiumplus'
-        || (x.kind === 'package' && x.pkgId === 'premium' && x.withTracker))) return next;
+      if (next.some((x) => x.kind === 'premiumplus')) return next;
       // Premium+ = tracker for all → drop individual trackers
       next = next.map((x) => (x.kind === 'package' ? { ...x, withTracker: false } : x))
         .filter((x) => x.kind !== 'trackerOnly');
@@ -215,19 +200,17 @@ export default function Shop() {
     if (b.kind === 'package') {
       const p = pkgById(b.pkgId);
       const out = [{ bi, name: `${p.name} · ${rt.label}`, price: Number(p.prices[b.runtimeKey]) || 0, disc: 'analysis' }];
-      if (b.withTracker && p.tracker) {
-        const trName = p.id === 'premium' ? `Portfolio Tracker · All packages · ${rt.label}` : `Portfolio Tracker · ${p.name} · ${rt.label}`;
-        out.push({ bi, name: trName, price: ptPriceOf(p) * rt.months, disc: 'tracker' });
+      if (b.withTracker && p.tracker && !hasPremiumPlus) {
+        out.push({ bi, name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: cat.tracker.perPackage * rt.months, disc: 'tracker' });
       }
       return out;
     }
     if (b.kind === 'trackerOnly') {
       const p = pkgById(b.pkgId);
-      return [{ bi, name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: ptPriceOf(p) * rt.months, disc: 'tracker' }];
+      return [{ bi, name: `Portfolio Tracker · ${p.name} · ${rt.label}`, price: cat.tracker.perPackage * rt.months, disc: 'tracker' }];
     }
     if (b.kind === 'premiumplus') {
-      const allPrice = premiumPkg ? ptPriceOf(premiumPkg) : cat.tracker.premiumPlus;
-      return [{ bi, name: `Portfolio Tracker · All packages · ${rt.label}`, price: allPrice * rt.months, disc: 'tracker' }];
+      return [{ bi, name: `Premium+ · Portfolio Tracker (all) · ${rt.label}`, price: cat.tracker.premiumPlus * rt.months, disc: 'tracker' }];
     }
     if (b.kind === 'voucher') {
       return [{ bi, name: `Gift Voucher · ${fmt(b.amount)} balance`, price: Number(b.amount) || 0, disc: 'voucher' }];
@@ -240,14 +223,25 @@ export default function Shop() {
   const analysisSubtotal = lineItems.filter((x) => x.disc === 'analysis').reduce((s, x) => s + x.price, 0);
   const voucherPurchaseTotal = lineItems.filter((x) => x.disc === 'voucher').reduce((s, x) => s + x.price, 0);
   const loyaltyOff = user.loyalty ? Math.round(analysisSubtotal * 10) / 100 : 0; // 10% on analysis only
-  const afterLoyalty = total0 - loyaltyOff;
+  // Coaching bulk discount — every coaching in the cart counts toward one total,
+  // regardless of which coach it is. Kicks in from 3 sessions, saturates near 10%.
+  const coachLines = lineItems.filter((x) => x.disc === 'coaching');
+  const coachCount = coachLines.length;
+  const coachSubtotal = coachLines.reduce((s, x) => s + x.price, 0);
+  const coachPct = coachBulkPercent(coachCount);
+  const coachBulkOff = Math.round(coachSubtotal * coachPct) / 100;
+  const afterLoyalty = total0 - loyaltyOff - coachBulkOff;
   // codes & vouchers never discount a gift-voucher purchase itself
   // A percent code may be scoped to certain product categories (empty scope = all).
   const codeScope = applied?.type === 'percent' ? (applied.scope || []) : [];
   const isPercentLike = applied?.type === 'percent' || applied?.type === 'referral';
   const inScope = (x) => x.disc !== 'voucher' && (codeScope.length === 0 || codeScope.includes(x.disc));
   const codeBase = isPercentLike
-    ? lineItems.filter(inScope).reduce((s, x) => s + ((x.disc === 'analysis' && user.loyalty) ? x.price * 0.9 : x.price), 0)
+    ? lineItems.filter(inScope).reduce((s, x) => {
+        if (x.disc === 'analysis' && user.loyalty) return s + x.price * 0.9;
+        if (x.disc === 'coaching' && coachPct > 0) return s + x.price * (1 - coachPct / 100);
+        return s + x.price;
+      }, 0)
     : 0;
   const codeOff = isPercentLike ? Math.round(codeBase * applied.percent) / 100 : 0;
   const voucherBase = Math.max(0, afterLoyalty - voucherPurchaseTotal);
@@ -262,6 +256,7 @@ export default function Shop() {
   // Discount lines appended to the order (so the ticket + transcript show them).
   const discountLines = [
     ...(loyaltyOff > 0 ? [{ name: 'Loyalty −10% (analysis)', price: -loyaltyOff }] : []),
+    ...(coachBulkOff > 0 ? [{ name: `Coaching bulk ×${coachCount} −${coachPct.toFixed(2)}%`, price: -coachBulkOff }] : []),
     ...(codeOff > 0 ? [{ name: applied.type === 'referral' ? `Referral ${applied.code} −${applied.percent}%` : `Code ${applied.code} −${applied.percent}%`, price: -codeOff }] : []),
     ...(voucherOff > 0 ? [{ name: `Voucher ${applied.code}`, price: -voucherOff }] : []),
     ...(balanceApplied > 0 ? [{ name: 'Balance credit', price: -balanceApplied }] : []),
@@ -290,34 +285,33 @@ export default function Shop() {
 
         <div className="cols-2">
           {cat.packages.map((p, i) => (
-            <PackageCard key={p.id} index={i} pkg={p} trackerPrice={ptPriceOf(p)}
-              allowTracker={p.tracker && !hasPremiumPlus}
-              trackerAll={p.id === 'premium'}
+            <PackageCard key={p.id} index={i} pkg={p} trackerPrice={cat.tracker.perPackage}
+              allowTracker={p.tracker && p.id !== 'premium' && !hasPremiumPlus}
               inCart={buyingIds.has(p.id)}
               covered={p.id !== 'premium' && buyingIds.has('premium')}
               onAdd={add} />
           ))}
         </div>
 
-        {(ownedTrackable.length > 0 || (ownsPremium && !hasPremiumPlus)) && (
+        {ownedTrackable.length > 0 && (
           <>
             <p className="eyebrow" style={{ marginTop: 30 }}>Portfolio Tracker</p>
             <h2 style={{ fontSize: 22, margin: '6px 0 6px' }}>Add Portfolio Tracker</h2>
             <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '0 0 14px' }}>
-              Add a tracker for any package individually
-              {ownsPremium ? ' — or grab the all-packages tracker in one go (adding it clears the individual ones).' : '.'}
+              Add a tracker for any package individually — {fmt(cat.tracker.perPackage)}/mo each.
+              Or pick Premium+ below for every tracker at once (selecting it clears the individual ones).
             </p>
             <div style={{ display: 'grid', gap: 10 }}>
-              {ownsPremium && !hasPremiumPlus && (
-                <AllTrackerRow price={ptPriceOf(premiumPkg)} maxMonths={premiumPlusCap} onAdd={add} onInfo={setInfo} />
-              )}
               {ownedTrackable.map((p) => (
-                <OwnedTrackerRow key={p.id} pkg={p} price={ptPriceOf(p)}
+                <OwnedTrackerRow key={p.id} pkg={p} price={cat.tracker.perPackage}
                   maxMonths={trackerCap(p)} onAdd={add} onInfo={setInfo} />
               ))}
             </div>
           </>
         )}
+
+        <PremiumPlusCard price={cat.tracker.premiumPlus} enabled={ownsPremium}
+          active={hasPremiumPlus} maxMonths={premiumPlusCap} onAdd={add} onInfo={setInfo} />
 
         {(!trialUsed || trialMsg) && (
           <FreeTrialCard packages={cat.packages.filter((p) => p.id !== 'premium')}
@@ -325,6 +319,15 @@ export default function Shop() {
         )}
 
         <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '0 0 14px' }}>
+          {coachCount >= COACH_BULK_MIN ? (
+            <>Coaching bulk discount active: <span style={{ color: 'var(--vsx-gold)' }}>−{coachPct.toFixed(2)}%</span> on
+              {' '}{coachCount} sessions. Add one more for −{coachBulkPercent(coachCount + 1).toFixed(2)}%.</>
+          ) : (
+            <>Book <span style={{ color: 'var(--vsx-gold)' }}>{COACH_BULK_MIN}+ coaching sessions</span> for an automatic bulk
+              discount — all coaches count together, up to −10%.</>
+          )}
+        </p>
         <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
         <div className="cols-2">
           {cat.services.map((s, i) => (
@@ -449,12 +452,7 @@ export default function Shop() {
               if (b.kind === 'package') {
                 const p = pkgById(b.pkgId);
                 const out = [{ roleId: p.roleId || '', months: rt.months, label: p.name }];
-                if (b.withTracker && p.tracker) {
-                  // Premium's tracker = the all-packages PT role, not a per-package one.
-                  out.push(p.id === 'premium'
-                    ? { roleId: cat.premiumPlusRoleId || p.ptRoleId || '', months: rt.months, label: 'Premium+ PT' }
-                    : { roleId: p.ptRoleId || '', months: rt.months, label: `${p.name} PT` });
-                }
+                if (b.withTracker && p.tracker) out.push({ roleId: p.ptRoleId || '', months: rt.months, label: `${p.name} PT` });
                 return out;
               }
               if (b.kind === 'trackerOnly') {
@@ -519,7 +517,7 @@ export default function Shop() {
   );
 }
 
-function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, trackerAll = false, inCart, covered, onAdd }) {
+function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, covered, onAdd }) {
   const [rtKey, setRtKey] = useState('1M');
   const [tracker, setTracker] = useState(false);
   const price = pkg.prices[rtKey];
@@ -554,7 +552,7 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, trackerAll = 
         {allowTracker && !inCart && !covered && (
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
-            + Portfolio Tracker{trackerAll ? ' — all packages' : ''} ({fmt(trackerPrice)}/mo)
+            + Portfolio Tracker ({fmt(trackerPrice)}/mo)
           </label>
         )}
         <motion.button className="btn" disabled={disabled} whileTap={{ scale: 0.96 }}
@@ -575,7 +573,6 @@ function OwnedTrackerRow({ pkg, price, maxMonths, onAdd, onInfo }) {
     <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px' }}>
       <div style={{ fontWeight: 500 }}>
         {pkg.name}
-        <span className="mono" style={{ fontSize: 12, color: 'var(--vsx-gold)', marginLeft: 8, fontWeight: 400 }}>{fmt(price)}/mo</span>
         {blocked && <div style={{ fontSize: 11, color: 'var(--vsx-muted)', fontWeight: 400, marginTop: 2 }}>Less than 1 month left — extend to add a tracker.</div>}
       </div>
       {blocked ? (
@@ -594,36 +591,40 @@ function OwnedTrackerRow({ pkg, price, maxMonths, onAdd, onInfo }) {
   );
 }
 
-// One tracker for every package — available while Premium access covers the runtime.
-// Rendered as a row inside the "Add Portfolio Tracker" section, styled like the
-// per-package rows but gold-bordered.
-function AllTrackerRow({ price, maxMonths, onAdd, onInfo }) {
+function PremiumPlusCard({ price, enabled, active, maxMonths, onAdd, onInfo }) {
   const options = maxMonths != null ? RUNTIMES.filter((r) => r.months <= maxMonths) : RUNTIMES;
-  const blocked = options.length === 0; // Premium expires in under 1 month → extend first
-  const [rtKey, setRtKey] = useState((options[0] || RUNTIMES[0]).key);
-  const valid = options.some((r) => r.key === rtKey) ? rtKey : (options[0] || RUNTIMES[0]).key;
-  const infoMsg = 'Your Premium analysis runs out too soon to add the all-packages tracker. Please extend your Premium subscription first — then you can add it for the matching duration.';
+  const blocked = enabled && options.length === 0; // Premium expires in under 1 month
+  const safe = options.length ? options : [RUNTIMES[0]];
+  const [rtKey, setRtKey] = useState(safe[0].key);
+  // clamp selection if the cap shrinks (e.g. Premium runtime changed)
+  const effectiveKey = safe.some((r) => r.key === rtKey) ? rtKey : safe[0].key;
+  const capLabel = options.length ? options.slice(-1)[0].label : '';
   return (
-    <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px', borderColor: 'var(--vsx-gold-2)' }}>
-      <div style={{ fontWeight: 500 }}>
-        All packages
-        <span className="mono" style={{ fontSize: 12, color: 'var(--vsx-gold)', marginLeft: 8, fontWeight: 400 }}>{fmt(price)}/mo</span>
-        <div style={{ fontSize: 11, color: 'var(--vsx-muted)', fontWeight: 400, marginTop: 2 }}>
-          {blocked ? 'Less than 1 month of Premium left — extend to add it.' : 'One tracker covering every package.'}
-        </div>
+    <div className="card" style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderColor: 'var(--vsx-gold-2)', opacity: enabled ? 1 : 0.6 }}>
+      <div>
+        <p className="eyebrow">Add-on</p>
+        <h3 style={{ fontSize: 19, marginTop: 4 }}>Premium+ · Portfolio Tracker</h3>
+        <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '4px 0 0' }}>
+          {!enabled
+            ? 'Requires Premium — own the Premium role or add Premium to your cart.'
+            : blocked
+              ? 'Less than 1 month of Premium left — extend your Premium subscription to add Premium+.'
+              : maxMonths != null
+                ? `Portfolio Tracker for all your packages — ${fmt(price)}/mo. Runtime is capped to your Premium access (${capLabel}).`
+                : `Portfolio Tracker for all your packages — ${fmt(price)}/mo.`}
+        </p>
       </div>
-      {blocked ? (
-        <button className="btn-ghost" style={{ fontSize: 12, color: 'var(--vsx-gold)', flexShrink: 0 }} onClick={() => onInfo && onInfo(infoMsg)}>Extend to unlock ⓘ</button>
-      ) : (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select value={valid} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto' }}>
-            {options.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+      <div style={{ textAlign: 'right' }}>
+        {!blocked && (
+          <select value={effectiveKey} onChange={(e) => setRtKey(e.target.value)} style={{ width: 'auto', marginBottom: 8 }} disabled={!enabled}>
+            {safe.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
-          <button className="btn" onClick={() => onAdd({ kind: 'premiumplus', runtimeKey: valid })}>
-            Add tracker
-          </button>
-        </div>
-      )}
+        )}
+        <button className="btn" disabled={!enabled || active || blocked} onClick={() => blocked ? (onInfo && onInfo('Your Premium analysis runs out too soon to add Premium+. Please extend your Premium subscription first, then add Premium+ for the matching duration.')) : onAdd({ kind: 'premiumplus', runtimeKey: effectiveKey })}>
+          {active ? 'In cart' : blocked ? 'Extend first' : 'Add'}
+        </button>
+        {blocked && <button className="btn-ghost" style={{ fontSize: 11, color: 'var(--vsx-gold)', marginTop: 6, display: 'block', marginLeft: 'auto' }} onClick={() => onInfo && onInfo('Your Premium analysis runs out too soon to add Premium+. Please extend your Premium subscription first, then add Premium+ for the matching duration.')}>Why? ⓘ</button>}
+      </div>
     </div>
   );
 }

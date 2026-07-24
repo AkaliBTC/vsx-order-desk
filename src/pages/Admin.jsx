@@ -55,6 +55,18 @@ function useUserNames() {
   return names;
 }
 
+// How long a ticket has been open, e.g. "12m", "3h 20m", "2d 4h".
+function openFor(createdAt) {
+  if (!createdAt?.seconds) return null;
+  const ms = Date.now() - createdAt.seconds * 1000;
+  if (ms < 0) return null;
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
+}
+
 // Readable one-time voucher code, e.g. VSX-7K3M-9QF2 (no ambiguous chars).
 function genVoucherCode() {
   const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -89,10 +101,16 @@ export default function Admin() {
 function Tickets({ user }) {
   const [tickets, setTickets] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [, setTick] = useState(0);   // re-render each minute so ages stay current
 
   useEffect(() => {
     const q = query(collection(db, 'tickets'), orderBy('createdAt', 'desc'));
     return onSnapshot(q, (s) => setTickets(s.docs.map((d) => ({ id: d.id, ...d.data() }))));
+  }, []);
+
+  useEffect(() => {
+    const iv = setInterval(() => setTick((n) => n + 1), 60000);
+    return () => clearInterval(iv);
   }, []);
 
   const active = tickets.find((t) => t.id === selected);
@@ -103,19 +121,31 @@ function Tickets({ user }) {
         <p className="eyebrow">Open tickets</p>
         <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
           {tickets.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14 }}>No open tickets.</p>}
-          {tickets.map((t) => (
-            <button key={t.id} onClick={() => setSelected(t.id)} style={{
-              textAlign: 'left', background: selected === t.id ? 'var(--vsx-charcoal-3)' : 'transparent',
-              border: '1px solid var(--vsx-line)', borderRadius: 8, padding: 12,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span className="mono" style={{ fontSize: 12 }}>#{t.id.slice(0, 6)}</span>
-                <span className={`tag ${t.status === 'paid' ? 'ok' : 'warn'}`}>{t.status === 'paid' ? 'paid' : 'open'}</span>
-              </div>
-              <div style={{ fontSize: 13, marginTop: 4 }}>{t.userTag}</div>
-              <div className="mono" style={{ fontSize: 12, color: 'var(--vsx-gold)' }}>{fmt(t.total)}</div>
-            </button>
-          ))}
+          {tickets.map((t) => {
+            const age = openFor(t.createdAt);
+            const hrs = t.createdAt?.seconds ? (Date.now() - t.createdAt.seconds * 1000) / 3600000 : 0;
+            const stale = t.status !== 'paid' && hrs >= 24;   // open a day or longer
+            return (
+              <button key={t.id} onClick={() => setSelected(t.id)} style={{
+                textAlign: 'left', background: selected === t.id ? 'var(--vsx-charcoal-3)' : 'transparent',
+                border: '1px solid var(--vsx-line)', borderRadius: 8, padding: 12,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className="mono" style={{ fontSize: 12 }}>#{t.id.slice(0, 6)}</span>
+                  <span className={`tag ${t.status === 'paid' ? 'ok' : 'warn'}`}>{t.status === 'paid' ? 'paid' : 'open'}</span>
+                </div>
+                <div style={{ fontSize: 13, marginTop: 4 }}>{t.userTag}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 12, color: 'var(--vsx-gold)' }}>{fmt(t.total)}</span>
+                  {age && (
+                    <span className="mono" style={{ fontSize: 11, color: stale ? 'var(--vsx-err)' : 'var(--vsx-muted)' }}>
+                      {t.status === 'paid' ? age : `open ${age}`}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </aside>
       <main>
@@ -239,6 +269,11 @@ function AdminDetail({ ticket, modTag, user }) {
         <div>
           <p className="eyebrow">Ticket #{ticket.id.slice(0, 6)} · {ticket.userTag}</p>
           <h2 style={{ fontSize: 22 }}>{fmt(ticket.total)}</h2>
+          {openFor(ticket.createdAt) && (
+            <p className="mono" style={{ fontSize: 11, color: 'var(--vsx-muted)', margin: '2px 0 0' }}>
+              {ticket.status === 'paid' ? 'created' : 'open for'} {openFor(ticket.createdAt)}
+            </p>
+          )}
         </div>
         <span className={`tag ${ticket.status === 'paid' ? 'ok' : 'warn'}`}>{ticket.status}</span>
       </div>
@@ -315,25 +350,7 @@ function CatalogueEditor() {
     const services = f.services.map((s, idx) => idx === i ? { ...s, [key]: key === 'price' ? Number(val) : val } : s);
     return { ...f, services };
   });
-  const removePkg = (i) => setForm((f) => {
-    const p = f.packages[i];
-    if (!confirm(`Remove package "${p?.name || p?.id}" from the catalogue? Existing roles/subscriptions are untouched.`)) return f;
-    return { ...f, packages: f.packages.filter((_, idx) => idx !== i) };
-  });
-
-  // Launch a new package: id is a slug derived from the name (stable — it maps
-  // Discord roles to ownership), everything else is edited in its card below.
-  const addPkg = (name) => setForm((f) => {
-    const base = (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'package';
-    let id = base; let n = 2;
-    while (f.packages.some((p) => p.id === id)) { id = `${base}-${n}`; n += 1; }
-    const pkg = {
-      id, name: name || 'New Package', desc: '',
-      prices: { '1M': null, '3M': null, '12M': null },
-      tracker: true, roleId: '', ptRoleId: '', ptPrice: null,
-    };
-    return { ...f, packages: [...f.packages, pkg] };
-  });
+  const removePkg = (i) => setForm((f) => ({ ...f, packages: f.packages.filter((_, idx) => idx !== i) }));
 
   const save = async () => {
     setSaveErr('');
@@ -386,7 +403,7 @@ function CatalogueEditor() {
             <div><label style={lbl}>Discord role ID — ownership</label><input style={inp} value={p.roleId || ''} onChange={(e) => setPkg(i, 'roleId', e.target.value)} placeholder="role granted on purchase" /></div>
             <div><label style={lbl}>Discord role ID — Portfolio Tracker</label><input style={inp} value={p.ptRoleId || ''} onChange={(e) => setPkg(i, 'ptRoleId', e.target.value)} placeholder="PT role for this package" /></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             {RUNTIMES.map((r) => (
               <div key={r.key}>
                 <label style={lbl}>{r.label} ($)</label>
@@ -394,29 +411,21 @@ function CatalogueEditor() {
                   onChange={(e) => setPkgPrice(i, r.key, e.target.value)} />
               </div>
             ))}
-            <div>
-              <label style={lbl}>Tracker ($/mo)</label>
-              <input style={inp} type="number" value={p.ptPrice ?? ''}
-                placeholder={p.id === 'premium' ? String(form.tracker.premiumPlus) : String(form.tracker.perPackage)}
-                onChange={(e) => setPkg(i, 'ptPrice', e.target.value === '' ? null : Number(e.target.value))} />
-            </div>
           </div>
         </div>
       ))}
 
-      <NewPackageCard onAdd={addPkg} />
-
-      <p className="eyebrow" style={{ marginTop: 10 }}>Tracker pricing — defaults ($/month)</p>
+      <p className="eyebrow" style={{ marginTop: 10 }}>Tracker pricing ($/month)</p>
       <div className="card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div><label style={lbl}>Per package (default — override per package above)</label>
+        <div><label style={lbl}>Per package</label>
           <input style={inp} type="number" value={form.tracker.perPackage}
             onChange={(e) => setForm((f) => ({ ...f, tracker: { ...f.tracker, perPackage: Number(e.target.value) } }))} /></div>
-        <div><label style={lbl}>Premium — all packages (default)</label>
+        <div><label style={lbl}>Premium+ (all)</label>
           <input style={inp} type="number" value={form.tracker.premiumPlus}
             onChange={(e) => setForm((f) => ({ ...f, tracker: { ...f.tracker, premiumPlus: Number(e.target.value) } }))} /></div>
       </div>
       <div className="card">
-        <label style={lbl}>Discord role ID — Portfolio Tracker for ALL packages (granted via Premium's tracker)</label>
+        <label style={lbl}>Premium+ Discord role ID (Portfolio Tracker for all packages)</label>
         <input style={inp} value={form.premiumPlusRoleId || ''} placeholder="PT-all role"
           onChange={(e) => setForm((f) => ({ ...f, premiumPlusRoleId: e.target.value }))} />
       </div>
@@ -669,7 +678,7 @@ function SubscriptionsManager() {
     if (p.roleId) roleOptions.push({ label: p.name, roleId: p.roleId });
     if (p.ptRoleId) roleOptions.push({ label: `${p.name} · Tracker`, roleId: p.ptRoleId });
   });
-  if (cat.premiumPlusRoleId) roleOptions.push({ label: 'Tracker · All packages', roleId: cat.premiumPlusRoleId });
+  if (cat.premiumPlusRoleId) roleOptions.push({ label: 'Premium+ · Tracker', roleId: cat.premiumPlusRoleId });
   if (cat.loyaltyRoleId) roleOptions.push({ label: 'Loyalty', roleId: cat.loyaltyRoleId });
 
   const call = async (payload) => {
@@ -816,32 +825,6 @@ function ReferralsManager() {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// ---------- Launch a new package (Catalogue editor) ----------
-function NewPackageCard({ onAdd }) {
-  const [name, setName] = useState('');
-  const launch = () => {
-    const n = name.trim();
-    if (!n) return;
-    onAdd(n);
-    setName('');
-  };
-  return (
-    <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, borderStyle: 'dashed' }}>
-      <div style={{ flex: 1 }}>
-        <p className="eyebrow" style={{ margin: '0 0 4px' }}>Launch new package</p>
-        <label style={{ fontSize: 11, color: 'var(--vsx-muted)', display: 'block' }}>Package name</label>
-        <input style={{ marginTop: 4 }} value={name} placeholder="e.g. Commodities Pro"
-          onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && launch()} />
-        <p style={{ fontSize: 11, color: 'var(--vsx-muted)', margin: '6px 0 0' }}>
-          Creates a card above — set description, role IDs and prices there, then hit “Save changes”.
-          It goes live in the Shop the moment it's saved.
-        </p>
-      </div>
-      <button className="btn" disabled={!name.trim()} onClick={launch}>Add package</button>
     </div>
   );
 }
