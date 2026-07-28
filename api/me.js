@@ -7,6 +7,10 @@
 //   POST /api/me?action=prestige  { tier }     -> buys the next prestige tier
 //   POST /api/me?action=trial     { packageId }-> starts the once-per-life free trial
 import admin from 'firebase-admin';
+import { fulfilTicket } from './grant-role.js';
+
+const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+const TRON_ADDRESS = () => process.env.TRON_ADDRESS || 'TDXQmtWWcu9HGVzP6PjKEZrki9mRAcJc8t';
 
 function getAdmin() {
   if (!admin.apps.length) {
@@ -198,6 +202,97 @@ async function actionTrial(req, decoded, res) {
 
 /* ------------------------------ router ------------------------------- */
 
+/* ------------------------------ router ------------------------------- */
+
+// Verify a TRC20 USDT payment by its transaction ID and, if the amount covers the
+// ticket total, auto-confirm + fulfil. Overpaying is fine; underpaying is rejected.
+async function actionVerifyTx(req, decoded, res) {
+  const userId = decoded.uid;
+  const { ticketId, txHash } = req.body || {};
+  if (!ticketId || !txHash) return res.status(400).json({ error: 'ticketId and txHash required' });
+  const hash = String(txHash).trim().replace(/^0x/i, '');
+  if (!/^[0-9a-fA-F]{64}$/.test(hash)) return res.status(400).json({ error: 'That doesn\'t look like a valid transaction ID.' });
+
+  const db = getAdmin().firestore();
+  const ref = db.collection('tickets').doc(ticketId);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ error: 'Ticket not found.' });
+  const ticket = snap.data();
+  if (ticket.userId !== userId) return res.status(403).json({ error: 'Not your ticket.' });
+  if (ticket.status === 'paid') return res.json({ ok: true, already: true });
+
+  // Prevent reusing the same transaction for multiple tickets.
+  const lockRef = db.collection('tron_tx').doc(hash);
+  if ((await lockRef.get()).exists) return res.status(409).json({ error: 'This transaction has already been used.' });
+
+  // Look the transaction up on-chain (Tronscan returns base58 addresses — easy to match).
+  let transfers = [];
+  try {
+    const r = await fetch(`https://apilist.tronscanapi.com/api/transaction-info?hash=${hash}`);
+    const d = await r.json();
+    transfers = d.trc20TransferInfo || (d.tokenTransferInfo ? [d.tokenTransferInfo] : []);
+  } catch (_) {
+    return res.status(502).json({ error: 'Could not reach the blockchain right now — please try again in a moment.' });
+  }
+  if (!transfers.length) return res.status(404).json({ error: 'Transaction not found yet. If you just sent it, wait ~30s and try again.' });
+
+  const required = Number(ticket.total) || 0;
+  const match = transfers.find((t) => {
+    const contract = t.contract_address || t.tokenInfo?.tokenId || '';
+    const to = t.to_address || t.toAddress || '';
+    const dec = Number(t.decimals ?? t.tokenInfo?.tokenDecimal ?? 6);
+    const raw = Number(t.amount_str ?? t.amount ?? t.quant ?? 0);
+    const value = raw / Math.pow(10, dec);
+    return contract === USDT_CONTRACT && to === TRON_ADDRESS() && value + 1e-6 >= required;
+  });
+  if (!match) {
+    return res.status(400).json({
+      error: `No USDT transfer of at least ${required} to our address was found in that transaction. Make sure you sent USDT (TRC20) to the correct address.`,
+    });
+  }
+
+  // Reserve the tx so a double-submit can't fulfil twice.
+  await lockRef.set({ ticketId, userId, at: admin.firestore.FieldValue.serverTimestamp() });
+
+  // Create any purchased gift vouchers + mark a redeemed voucher used (same as the
+  // team's manual confirm), then run the shared fulfillment.
+  const vouchers = [];
+  for (const amount of (ticket.voucherPurchases || [])) {
+    const code = genCode();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 365 * 24 * 3600 * 1000);
+    try {
+      await db.collection('vouchers').doc(code).set({
+        amount: Number(amount), expiresAt, used: false,
+        buyerId: ticket.userId, ticketId, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      vouchers.push({ code, amount: Number(amount) });
+    } catch (_) {}
+  }
+  if (ticket.redeemedVoucher) {
+    await db.collection('vouchers').doc(ticket.redeemedVoucher)
+      .set({ used: true, usedAt: admin.firestore.FieldValue.serverTimestamp(), usedTicket: ticketId }, { merge: true })
+      .catch(() => {});
+  }
+
+  await ref.set({
+    status: 'paid', payment: {
+      ...(ticket.payment || {}), status: 'paid', txHash: hash,
+      confirmedBy: 'auto:tron', confirmedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+  }, { merge: true });
+
+  let result = {};
+  try {
+    result = await fulfilTicket({
+      ticketId, userId: ticket.userId, userTag: ticket.userTag,
+      grants: ticket.grants || [], services: ticket.services || [], vouchers,
+      referralCode: ticket.referralCode || '', balanceUsed: Number(ticket.balanceUsed) || 0,
+    });
+  } catch (e) { result = { error: e.message }; }
+
+  return res.json({ ok: true, fulfilled: true, result });
+}
+
 export default async function handler(req, res) {
   try {
     const authz = req.headers.authorization || '';
@@ -210,6 +305,7 @@ export default async function handler(req, res) {
     if (action === 'referral') return await actionReferral(decoded, res);
     if (action === 'prestige') return await actionPrestige(req, decoded, res);
     if (action === 'trial') return await actionTrial(req, decoded, res);
+    if (action === 'verifytx') return await actionVerifyTx(req, decoded, res);
     return res.status(400).json({ error: 'unknown action' });
   } catch (e) {
     res.status(500).json({ error: e.message || 'me failed' });

@@ -101,8 +101,7 @@ function Payment({ ticket }) {
   const choose = async (method) => {
     const patch = { 'payment.method': method, 'payment.status': 'awaiting' };
     if (method === 'trc20') {
-      const unique = Math.floor(1 + Math.random() * 999) / 1000;
-      patch['payment.expectedAmount'] = +(ticket.total + unique).toFixed(3);
+      patch['payment.expectedAmount'] = +Number(ticket.total).toFixed(2);
       patch['payment.address'] = PAYMENT.tronAddress;
     }
     await updateDoc(doc(db, 'tickets', ticket.id), patch);
@@ -151,6 +150,9 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
   const [cooldown, setCooldown] = useState(15);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [txId, setTxId] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyErr, setVerifyErr] = useState('');
   const fileRef = useRef();
 
   useEffect(() => {
@@ -161,8 +163,25 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
 
   const isTron = p.method === 'trc20';
   const address = isTron ? p.address : PAYMENT.paypalHandle;
-  const amount = isTron ? p.expectedAmount : ticket.total;
+  const amount = ticket.total;   // send exactly the total — overpaying is fine, we verify the tx
   const reported = !!p.markedPaidAt || submitting;
+
+  const verifyTx = async () => {
+    const hash = txId.trim();
+    if (!hash) { setVerifyErr('Paste your transaction ID.'); return; }
+    setVerifyErr(''); setVerifying(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/me?action=verifytx', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ ticketId: ticket.id, txHash: hash }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setVerifyErr(d.error || 'Verification failed.'); }
+      // on success the ticket flips to "paid" via the live listener — no extra UI needed
+    } catch (e) { setVerifyErr('Could not verify right now — please try again.'); }
+    setVerifying(false);
+  };
 
   const markPaid = async () => {
     if (reported) return;
@@ -197,14 +216,14 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
       </div>
       <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 8 }}>
         {isTron
-          ? 'Send the exact amount shown (including decimals) to the address. The amount is used to match your payment.'
+          ? 'Send the amount below in USDT (TRC20) to the address, then paste your transaction ID to unlock your access automatically. Sending a little more is fine.'
           : 'Send the amount to the PayPal account below and attach a proof screenshot.'}
       </p>
 
       <div style={{ background: 'var(--vsx-charcoal-3)', borderRadius: 8, padding: 14, marginTop: 14 }}>
         <div className="eyebrow">Amount</div>
         <div className="mono display" style={{ fontSize: 22, color: 'var(--vsx-gold)' }}>
-          {isTron ? `${amount.toFixed(3)} USDT` : fmt(amount)}
+          {isTron ? `${amount.toFixed(2)} USDT` : fmt(amount)}
         </div>
         <div className="eyebrow" style={{ marginTop: 12 }}>{isTron ? 'Address (TRC20)' : 'PayPal'}</div>
         <div className="mono" style={{ wordBreak: 'break-all', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
@@ -220,7 +239,22 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
         </div>
       )}
 
-      {reported ? (
+      {isTron && ticket.status !== 'paid' && (
+        <div style={{ marginTop: 16 }}>
+          <label className="eyebrow">Transaction ID</label>
+          <input value={txId} onChange={(e) => setTxId(e.target.value)} placeholder="Paste your TRC20 transaction hash"
+            style={{ marginTop: 6, width: '100%' }} onKeyDown={(e) => e.key === 'Enter' && verifyTx()} />
+          {verifyErr && <p style={{ color: 'var(--vsx-err)', fontSize: 12, marginTop: 8 }}>{verifyErr}</p>}
+          <button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={verifying} onClick={verifyTx}>
+            {verifying ? 'Verifying on-chain…' : 'Verify payment'}
+          </button>
+          <p style={{ color: 'var(--vsx-muted)', fontSize: 11, marginTop: 8 }}>
+            Access unlocks automatically once the transaction is confirmed on-chain. Just sent it? Give it ~30s.
+          </p>
+        </div>
+      )}
+
+      {!isTron && (reported ? (
         <div style={{ marginTop: 16, background: 'rgba(84,192,138,.10)', border: '1px solid #2e5b46', borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ color: 'var(--vsx-ok)', fontSize: 18 }}>✓</span>
           <span style={{ color: 'var(--vsx-ok)', fontSize: 14 }}>Payment reported — the team will confirm it shortly. You'll see a confirmation here.</span>
@@ -229,7 +263,7 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
         <button className="btn" style={{ width: '100%', marginTop: 16 }} disabled={cooldown > 0 || uploading} onClick={markPaid}>
           {uploading ? 'Sending…' : cooldown > 0 ? `I've paid (${cooldown}s)` : "I've paid"}
         </button>
-      )}
+      ))}
     </div>
   );
 }

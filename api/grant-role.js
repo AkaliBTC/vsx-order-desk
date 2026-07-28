@@ -175,21 +175,11 @@ async function upsertEntitlement(db, { userId, userTag, roleId, label, durationM
   return newMs;
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
-  try {
-    // Verify the caller is a mod (Firebase Auth — does not need Firestore).
-    const authz = req.headers.authorization || '';
-    const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : null;
-    if (!idToken) return res.status(401).json({ error: 'no token' });
-    const decoded = await getAdmin().auth().verifyIdToken(idToken);
-    if (decoded.mod !== true && decoded.admin !== true) return res.status(403).json({ error: 'not a mod' });
-
-    const { ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '', balanceUsed = 0 } = req.body || {};
-    if (!userId) return res.status(400).json({ error: 'no userId' });
-
-    const granted = [];
-    const failed = [];
+// Core fulfillment — grant roles, create channels, create+DM vouchers, referral,
+// balance. Reusable by the mod endpoint (below) AND the self-checkout (api/me.js).
+export async function fulfilTicket({ ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '', balanceUsed = 0 }) {
+  const granted = [];
+  const failed = [];
     const channels = [];
     const channelErrors = [];
     let expiryWarning = null;
@@ -319,7 +309,21 @@ export default async function handler(req, res) {
     const referral = await processReferral(getAdmin().firestore(), referralCode, userId);
     const balanceDeducted = await deductBalance(getAdmin().firestore(), userId, balanceUsed);
 
-    res.json({ granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral, balanceDeducted });
+  return { granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral, balanceDeducted };
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method' });
+  try {
+    // Verify the caller is a mod (Firebase Auth — does not need Firestore).
+    const authz = req.headers.authorization || '';
+    const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : null;
+    if (!idToken) return res.status(401).json({ error: 'no token' });
+    const decoded = await getAdmin().auth().verifyIdToken(idToken);
+    if (decoded.mod !== true && decoded.admin !== true) return res.status(403).json({ error: 'not a mod' });
+    if (!(req.body || {}).userId) return res.status(400).json({ error: 'no userId' });
+    const result = await fulfilTicket(req.body || {});
+    res.json(result);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || 'grant failed' });
