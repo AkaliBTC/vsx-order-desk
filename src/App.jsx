@@ -12,8 +12,8 @@ function Header() {
     <header className="app-header">
       <Link to="/" className="app-brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <img src="/logo.png" alt="VisionX" height={34} style={{ display: 'block' }} />
-        <span className="display" style={{ fontSize: 26, color: 'var(--vsx-gold)' }}>VISIONX</span>
-        <span className="eyebrow hide-sm">Order Desk</span>
+        <span className="display wordmark" style={{ fontSize: 24 }}>VISIONX</span>
+        <span className="eyebrow eyebrow-plain hide-sm">Order Desk</span>
       </Link>
       <nav style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         <Link to="/dashboard" className="btn-ghost" style={{ textDecoration: 'none', padding: '8px 16px' }}>Dashboard</Link>
@@ -40,10 +40,11 @@ function ErrorBanner() {
   return (
     <div className="shell" style={{ paddingBottom: 0 }}>
       <div style={{
-        background: 'rgba(192,83,63,.12)', border: '1px solid #5b2e26',
-        borderRadius: 10, padding: '12px 16px', color: '#e7a08f', fontSize: 14,
+        background: 'var(--vsx-panel)', borderLeft: '2px solid var(--vsx-err)',
+        borderRadius: '0 var(--r-ctl) var(--r-ctl) 0', padding: '14px 18px', fontSize: 14,
       }}>
-        <b>Login error:</b> <span className="mono">{authError}</span>
+        <div style={{ color: 'var(--tx-1)' }}>Discord sign-in did not complete.</div>
+        <div className="mono" style={{ color: 'var(--tx-2)', fontSize: 13, marginTop: 4 }}>{authError}</div>
       </div>
     </div>
   );
@@ -66,12 +67,12 @@ function Gate({ children, mod }) {
   if (!ready) return <div className="shell" style={{ paddingTop: 60 }}>Loading…</div>;
   if (!user) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 20px', position: 'relative', overflow: 'hidden' }}>
-      <div aria-hidden style={{ position: 'absolute', top: '34%', left: '50%', width: 560, height: 560, transform: 'translate(-50%,-50%)', background: 'radial-gradient(circle, rgba(212,175,55,.16), transparent 62%)', pointerEvents: 'none' }} />
+      <div aria-hidden className="hero-light" style={{ position: 'absolute', top: '28%', left: '50%', width: 620, height: 420, marginLeft: -310, pointerEvents: 'none' }} />
       <img className="floaty" src="/logo.png" alt="VisionX" height={112}
         style={{ marginBottom: 30, filter: 'drop-shadow(0 22px 60px rgba(212,175,55,.32))', position: 'relative' }} />
-      <p className="eyebrow rise" style={{ animationDelay: '.05s' }}>Access</p>
-      <h1 className="rise" style={{ fontSize: 42, letterSpacing: '.02em', margin: '14px 0 14px', animationDelay: '.12s' }}>Welcome to VisionX</h1>
-      <p className="rise" style={{ color: 'var(--vsx-muted)', maxWidth: 430, lineHeight: 1.65, marginBottom: 32, animationDelay: '.19s' }}>
+      <p className="eyebrow eyebrow-plain rise" style={{ animationDelay: '.05s' }}>Independent market analysis house</p>
+      <h1 className="rise" style={{ fontSize: 'clamp(32px,4vw,52px)', margin: '18px 0 16px', animationDelay: '.14s', position: 'relative' }}>Welcome to VisionX</h1>
+      <p className="rise" style={{ color: 'var(--tx-2)', maxWidth: '62ch', lineHeight: 1.65, marginBottom: 34, animationDelay: '.23s', position: 'relative' }}>
         Sign in with Discord to access your analysis packages, tracker and services.
       </p>
       <div className="rise" style={{ animationDelay: '.26s' }}>
