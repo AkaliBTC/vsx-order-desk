@@ -12,5 +12,31 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <!-- Lit borders. Feeds the pointer position to the card ring and wash
+         in theme.css. Purely presentational: it sets two CSS custom
+         properties and one attribute, and touches nothing else. Devices
+         without a hover pointer never run it and fall back to the static
+         gradient defined in the stylesheet. -->
+    <script>
+      (function () {
+        if (!window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
+        var current = null;
+        document.addEventListener('pointermove', function (e) {
+          var el = e.target && e.target.closest ? e.target.closest('.card') : null;
+          if (el !== current) {
+            if (current) current.removeAttribute('data-lit');
+            current = el;
+            if (current) current.setAttribute('data-lit', '');
+          }
+          if (!el) return;
+          var r = el.getBoundingClientRect();
+          el.style.setProperty('--lx', (e.clientX - r.left) + 'px');
+          el.style.setProperty('--ly', (e.clientY - r.top) + 'px');
+        }, { passive: true });
+        document.addEventListener('pointerleave', function () {
+          if (current) { current.removeAttribute('data-lit'); current = null; }
+        });
+      })();
+    </script>
   </body>
 </html>
