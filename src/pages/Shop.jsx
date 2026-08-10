@@ -293,26 +293,32 @@ export default function Shop() {
   // actually offer.
   const fromMonthly = (() => {
     const rates = cat.packages
-      .filter((p) => p.id !== 'premium')
-      .flatMap((p) => RUNTIMES
-        .filter((r) => p.prices[r.key] != null && p.prices[r.key] !== '')
-        .map((r) => Number(p.prices[r.key]) / r.months));
+      .filter((p) => p.id !== 'premium' && p.prices['1M'] != null && p.prices['1M'] !== '')
+      .map((p) => Number(p.prices['1M']));
     return rates.length ? Math.min(...rates) : null;
   })();
 
   return (
     <>
       <Hero fromMonthly={fromMonthly} />
+      <Proof />
       <IncludedStrip freebies={cat.freebies} />
 
       <div className="shell cols-main" id="packs" style={{ paddingBottom: 120 }}>
       <section>
         <div className="rule-head"><p className="eyebrow">Subscriptions</p></div>
         <h1 style={{ fontSize: 'clamp(32px,4vw,52px)', margin: '20px 0 10px' }}>Choose your coverage</h1>
-        <p style={{ color: 'var(--tx-2)', fontSize: 14, maxWidth: '52ch', margin: '0 0 32px' }}>
+        <p style={{ color: 'var(--tx-2)', fontSize: 14, maxWidth: '52ch', margin: '0 0 18px' }}>
           Pick the markets you actually trade. Longer terms cost less per month, and every pack ships
           the macro and practice channels.
         </p>
+        {fromMonthly != null && (
+          <p style={{ fontSize: 14, margin: '0 0 32px', color: 'var(--tx-2)' }}>
+            Comparable research desks charge <span style={{ color: 'var(--tx-1)' }}>$50 to $100 a month</span>.
+            {' '}Ours start at <span className="mono" style={{ color: 'var(--au-primary)' }}>{fmt(fromMonthly)}</span>,
+            {' '}because we live from our trading, not from your subscription.
+          </p>
+        )}
 
         <div className="cols-2">
           {cat.packages.map((p, i) => (
@@ -474,9 +480,23 @@ export default function Shop() {
       </aside>
       </div>
 
+      <HowItWorks />
       <FreeTier />
       <Faq />
+      <ClosingCta />
       <SiteFooter />
+
+      {lineItems.length > 0 && (
+        <div className="checkout-bar">
+          <div>
+            <span className="eyebrow eyebrow-plain">Order total</span>
+            <div className="mono display" style={{ fontSize: 24, lineHeight: 1.1, color: 'var(--au-primary)' }}>
+              <Au value={fmt(total)} />
+            </div>
+          </div>
+          <button className="btn" onClick={() => setConsentOpen(true)}>Open ticket</button>
+        </div>
+      )}
 
       <AnimatePresence>
         {consentOpen && (
@@ -800,7 +820,7 @@ function DeepDiveInfo({ onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--vsx-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
         </div>
         <h2 className="display" style={{ fontSize: 42, lineHeight: 1, margin: '6px 0 6px',
-          background: 'linear-gradient(180deg, #F0DFA6 0%, #D4AF37 55%, #C9A24B 100%)',
+          background: 'var(--au-fill)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
           DEEP DIVES
         </h2>
@@ -875,7 +895,7 @@ function CoachingInfo({ coach, onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--vsx-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
         </div>
         <h2 className="display" style={{ fontSize: 42, lineHeight: 1, margin: '6px 0 6px',
-          background: 'linear-gradient(180deg, #F0DFA6 0%, #D4AF37 55%, #C9A24B 100%)',
+          background: 'var(--au-fill)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
           COACHING
         </h2>
@@ -933,10 +953,14 @@ function RuleHead({ children }) {
 
 // The right-hand hero panel. An abstract sequence, not a live chart and not
 // a dashboard mock-up: hollow gold up-candles, dark down-candles, drawn once.
+// [bodyTop, bodyHeight, isUp, upperWick, lowerWick] — wicks are drawn as two
+// separate segments above and below the body, never through it.
 const CANDLES = [
-  [64, 30, 0], [58, 24, 1], [61, 34, 0], [52, 20, 1], [56, 26, 1], [44, 18, 0],
-  [48, 30, 0], [40, 22, 1], [46, 26, 0], [34, 16, 1], [38, 24, 1], [28, 14, 0],
-  [33, 22, 0], [24, 12, 1], [29, 20, 0], [20, 30, 0], [26, 40, 0], [18, 26, 0],
+  [64, 30, 0, 10, 14], [58, 24, 1, 16, 8],  [61, 34, 0, 6, 12],  [52, 20, 1, 12, 10],
+  [56, 26, 1, 8, 16],  [44, 18, 0, 14, 6],  [48, 30, 0, 10, 10], [40, 22, 1, 18, 8],
+  [46, 26, 0, 6, 14],  [34, 16, 1, 12, 12], [38, 24, 1, 8, 6],   [28, 14, 0, 16, 10],
+  [33, 22, 0, 10, 8],  [24, 12, 1, 14, 14], [29, 20, 0, 8, 10],  [20, 30, 0, 12, 6],
+  [26, 40, 0, 6, 16],  [18, 26, 0, 18, 10],
 ];
 
 function HeroSequence() {
@@ -948,15 +972,18 @@ function HeroSequence() {
         initial={{ clipPath: 'inset(0 100% 0 0)' }}
         animate={{ clipPath: 'inset(0 0% 0 0)' }}
         transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}>
-        {CANDLES.map(([y, h, up], i) => {
+        {CANDLES.map(([y, h, up, uw, lw], i) => {
           const x = 12 + i * 22;
+          const top = y * 3;
+          const bottom = top + h * 3;
+          const stroke = up ? 'var(--au-primary)' : '#3A322B';
           return (
             <g key={i}>
-              <line x1={x + 6} y1={y * 3 - 18} x2={x + 6} y2={y * 3 + h * 3 + 18}
-                stroke={up ? 'var(--au-primary)' : '#2A2A2E'} strokeWidth="1" />
-              <rect x={x} y={y * 3} width="12" height={h * 3}
-                fill={up ? 'none' : 'var(--vsx-panel-hi)'}
-                stroke={up ? 'var(--au-primary)' : '#2A2A2E'} strokeWidth="1" />
+              <line x1={x + 6} y1={top - uw} x2={x + 6} y2={top} stroke={stroke} strokeWidth="1.2" />
+              <line x1={x + 6} y1={bottom} x2={x + 6} y2={bottom + lw} stroke={stroke} strokeWidth="1.2" />
+              <rect x={x} y={top} width="12" height={h * 3} rx="1"
+                fill={up ? 'var(--vsx-panel)' : 'var(--vsx-panel-hi)'}
+                stroke={stroke} strokeWidth="1.2" />
             </g>
           );
         })}
@@ -1058,7 +1085,7 @@ function FreeTier() {
         <p style={{ color: 'var(--tx-2)', fontSize: 15, maxWidth: '62ch', margin: '20px 0 26px' }}>
           We'd rather convince you with the product than with a sales pitch.
         </p>
-        <a className="btn-ghost" href="https://discord.gg/" target="_blank" rel="noreferrer"
+        <a className="btn-ghost" href="https://discord.gg/b8btM4zdRr" target="_blank" rel="noreferrer"
           style={{ display: 'inline-block', textDecoration: 'none' }}>Join the Discord</a>
       </div>
     </section>
@@ -1133,7 +1160,7 @@ function SiteFooter() {
         </div>
         <div className="footer-col">
           <h4>Community</h4>
-          <a href="https://discord.gg/" target="_blank" rel="noreferrer">Discord</a>
+          <a href="https://discord.gg/b8btM4zdRr" target="_blank" rel="noreferrer">Discord</a>
           <a href="#free">Free analysis</a>
           <a href="#free">Track record</a>
         </div>
@@ -1153,5 +1180,91 @@ function SiteFooter() {
         </div>
       </div>
     </footer>
+  );
+}
+
+// Proof, not persuasion. Every claim here is something a visitor can go and
+// check for themselves in the Discord — no invented statistics, no logo wall,
+// no testimonial carousel.
+const PROOF = [
+  ['Own capital only', 'No client money and no external investors. We are exposed to every call we publish, which is the only incentive alignment that actually holds.'],
+  ['Published before the move', 'Analysis goes out before the market resolves it, not after. The timestamp is the argument.'],
+  ['Hit rate with sample size', 'Closed trades are documented in full, entries and exits. We always report hit rate together with sample size and average risk/reward, because a hit rate on its own means nothing.'],
+];
+
+function Proof() {
+  return (
+    <section className="section" style={{ paddingBottom: 120 }}>
+      <RuleHead>Why anyone should listen</RuleHead>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 28, marginTop: 28 }}>
+        {PROOF.map(([title, body], i) => (
+          <motion.div key={title} className="card"
+            initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }} whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.6, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: '.16em', color: 'var(--au-core)' }}>
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <h3 style={{ fontSize: 22, margin: '14px 0 10px' }}>{title}</h3>
+            <p style={{ color: 'var(--tx-2)', fontSize: 14, lineHeight: 1.6, margin: 0 }}>{body}</p>
+          </motion.div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const STEPS = [
+  ['Pick your markets', 'Choose the packs that match what you actually trade. Longer terms cost less per month.'],
+  ['Open a ticket', 'Check out with PayPal or USDT. Your Discord roles are granted as soon as payment lands.'],
+  ['Read the reasoning', 'Analysis, the macro report and the practice channel, from the first day of your term.'],
+];
+
+function HowItWorks() {
+  return (
+    <section className="section">
+      <RuleHead>How it works</RuleHead>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 28, marginTop: 28 }}>
+        {STEPS.map(([title, body], i) => (
+          <div key={title} style={{ borderTop: '1px solid var(--au-hairline)', paddingTop: 20 }}>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: '.16em', color: 'var(--au-core)' }}>
+              STEP {String(i + 1).padStart(2, '0')}
+            </span>
+            <h3 style={{ fontSize: 20, margin: '12px 0 8px' }}>{title}</h3>
+            <p style={{ color: 'var(--tx-2)', fontSize: 14, lineHeight: 1.6, margin: 0 }}>{body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ClosingCta() {
+  const toPacks = () => {
+    const el = document.getElementById('packs');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <section className="section" style={{ paddingBottom: 96 }}>
+      <div className="card closing-cta">
+        <div className="hero-light" aria-hidden
+          style={{ position: 'absolute', left: '-6%', top: '-40%', width: 520, height: 360, pointerEvents: 'none' }} />
+        <div style={{ position: 'relative' }}>
+          <RuleHead>Start where you are</RuleHead>
+          <h2 style={{ fontSize: 'clamp(28px,3.4vw,44px)', margin: '20px 0 14px', maxWidth: '18ch' }}>
+            Trade with the reasoning, not the noise
+          </h2>
+          <p style={{ color: 'var(--tx-2)', fontSize: 15, maxWidth: '54ch', margin: '0 0 28px' }}>
+            Take a single pack for a month and judge it on the analysis. If it does not change how you
+            read your charts, you have lost the price of a dinner.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <button className="btn" onClick={toPacks}>See the packs</button>
+            <a className="btn-ghost" href="https://discord.gg/b8btM4zdRr" target="_blank" rel="noreferrer"
+              style={{ textDecoration: 'none', display: 'inline-block' }}>Join the Discord</a>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
