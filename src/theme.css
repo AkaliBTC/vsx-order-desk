@@ -8,25 +8,26 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&family=Poppins:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* The dark room -------------------------------------------------- */
-  --vsx-void:     #0A0A0B;
-  --vsx-base:     #121212;
-  --vsx-panel:    #161617;
-  --vsx-panel-hi: #1C1C1E;
-  --vsx-inset:    #0E0E0F;
-  --vsx-premium:  #1A1508;
+  /* The dark room. Warm charcoal, not neutral grey — the whole room is
+     lit by a gold source, so the surfaces carry that temperature. ---- */
+  --vsx-void:     #0B0908;
+  --vsx-base:     #141110;
+  --vsx-panel:    #1B1715;
+  --vsx-panel-hi: #241F1B;
+  --vsx-inset:    #100D0C;
+  --vsx-premium:  #241A08;
 
   /* Gold as a metal — a ramp, never a two-stop fill ----------------- */
-  --au-shadow:   #6E5518;
-  --au-deep:     #A8842F;
-  --au-core:     #C9A24B;
-  --au-primary:  #D4AF37;
-  --au-light:    #E8CE74;
-  --au-specular: #FFF3CE;
+  --au-shadow:   #7B5F16;
+  --au-deep:     #B78F2C;
+  --au-core:     #D3A945;
+  --au-primary:  #DFB63C;
+  --au-light:    #F2D98A;
+  --au-specular: #FFF6DC;
 
-  --au-hairline: rgba(212,175,55,0.14);
-  --au-line:     rgba(212,175,55,0.32);
-  --au-glow:     rgba(212,175,55,0.16);
+  --au-hairline: rgba(223,182,60,0.20);
+  --au-line:     rgba(223,182,60,0.46);
+  --au-glow:     rgba(223,182,60,0.20);
 
   /* The one gold fill. 4 stops at 165°, with an inset specular top
      line and an inset shadow bottom line — that pair is what turns a
@@ -36,20 +37,22 @@
 
   /* Text — warm greys on purpose. Cool blue-greys next to gold read
      as cheap plastic. */
-  --tx-1: #F4F3F0;
-  --tx-2: #A5A29B;
-  --tx-3: #6E6B65;
+  /* Higher contrast across the board — the secondary and meta greys were
+     sitting too close to the panel value to carry small type. */
+  --tx-1: #FCF8F1;
+  --tx-2: #BDB4A6;
+  --tx-3: #8B8175;
 
-  --vsx-ok:   #54c08a;
+  --vsx-ok:   #63C892;
   --vsx-warn: var(--au-core);
-  --vsx-err:  #D2564A;
+  --vsx-err:  #E0654F;
 
   --vsx-display: 'TeX Gyre Heros Cn','TeX Gyre Heros Cond','Archivo Narrow','Roboto Condensed',sans-serif;
   --vsx-body:    'Poppins',system-ui,-apple-system,sans-serif;
   --vsx-mono:    'DejaVu Sans Mono','JetBrains Mono','SFMono-Regular',ui-monospace,monospace;
 
-  --r-card: 10px;   /* cards and panels */
-  --r-ctl:  8px;    /* buttons and inputs */
+  --r-card: 14px;   /* cards and panels */
+  --r-ctl:  10px;   /* buttons and inputs */
 
   --ease:   cubic-bezier(.16,1,.3,1);
   --spring: cubic-bezier(.22,1.3,.36,1);
@@ -92,7 +95,9 @@ body {
   overflow-x: clip;
   /* Not flat. One very wide radial from base at top centre to void at
      the edges. */
-  background: radial-gradient(120% 80% at 50% 0%, var(--vsx-base) 0%, #0F0F10 45%, var(--vsx-void) 100%);
+  background:
+    radial-gradient(90% 55% at 50% -6%, rgba(223,182,60,.055), rgba(223,182,60,0) 70%),
+    radial-gradient(120% 80% at 50% 0%, var(--vsx-base) 0%, #100D0C 45%, var(--vsx-void) 100%);
   background-attachment: fixed;
   min-height: 100vh;
 }
@@ -110,7 +115,7 @@ body::after {
   background-size: 160px 160px;
 }
 
-::selection { background: rgba(212,175,55,.24); }
+::selection { background: rgba(223,182,60,.28); color: #141110; }
 
 /* Type ------------------------------------------------------------------ */
 h1,h2,h3,.display {
@@ -143,7 +148,7 @@ p { text-wrap: pretty; }
   width: 72px;
   height: 1px;
   margin: -2px 0 0 14px;
-  background: linear-gradient(90deg, var(--au-line), rgba(212,175,55,0));
+  background: linear-gradient(90deg, var(--au-line), rgba(223,182,60,0));
 }
 .eyebrow-plain::after { display: none; }
 
@@ -220,7 +225,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   transition: background .35s var(--ease), border-color .35s var(--ease), transform .4s var(--ease);
 }
 /* Hover is never a whole-card scale: surface lifts, border lights up. */
-.card:hover { background: var(--vsx-panel-hi); }
+.card:hover { background: var(--vsx-panel-hi); border-color: rgba(223,182,60,.34); }
 
 /* Signature A — lit borders. A radial gold gradient at the pointer,
    masked to the 1px ring, plus a soft interior wash on the same point.
@@ -237,11 +242,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   transition: opacity .4s var(--ease);
 }
 .card::before {
-  background: radial-gradient(260px circle at var(--lx,50%) var(--ly,50%), rgba(212,175,55,.06), rgba(212,175,55,0) 70%);
+  background: radial-gradient(260px circle at var(--lx,50%) var(--ly,50%), rgba(223,182,60,.08), rgba(223,182,60,0) 70%);
 }
 .card::after {
   padding: 1px;
-  background: radial-gradient(200px circle at var(--lx,50%) var(--ly,50%), rgba(212,175,55,.85), rgba(212,175,55,0) 70%);
+  background: radial-gradient(200px circle at var(--lx,50%) var(--ly,50%), rgba(223,182,60,.95), rgba(223,182,60,0) 70%);
   -webkit-mask: linear-gradient(#fff,#fff) content-box, linear-gradient(#fff,#fff);
   -webkit-mask-composite: xor;
           mask: linear-gradient(#fff,#fff) content-box, linear-gradient(#fff,#fff);
@@ -251,7 +256,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .card[data-lit]::after { opacity: 1; }
 
 @media (hover: none) {
-  .card::after { opacity: 1; background: linear-gradient(135deg, var(--au-line), rgba(212,175,55,0) 60%); }
+  .card::after { opacity: 1; background: linear-gradient(135deg, var(--au-line), rgba(223,182,60,0) 60%); }
   .card::before { display: none; }
 }
 
@@ -279,7 +284,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 /* Signature B — the hero light. One ambient element, 22s loop. It is the
    light source for the room. Nothing else in the viewport loops. */
 .hero-light {
-  background: radial-gradient(closest-side, rgba(212,175,55,.10), rgba(212,175,55,0));
+  background: radial-gradient(closest-side, rgba(223,182,60,.13), rgba(223,182,60,0));
   filter: blur(140px);
   animation: vsxHeroLight 22s ease-in-out infinite;
 }
@@ -415,7 +420,7 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
   justify-content: space-between;
   gap: 12px;
   padding: 18px 40px;
-  background: rgba(18,18,18,.72);
+  background: rgba(20,17,16,.74);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--au-hairline);
@@ -467,7 +472,7 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, var(--au-line), rgba(212,175,55,0));
+  background: linear-gradient(90deg, var(--au-line), rgba(223,182,60,0));
 }
 
 .hero-facts {
@@ -581,4 +586,43 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
   .hero-facts { gap: 14px; flex-direction: column; }
   .hero-facts > span + span { border-left: 0; padding-left: 0; }
   .faq-q { font-size: 16px; }
+}
+
+/* Closing CTA — the one panel that carries the gold material outside the
+   Premium card. Second light source, static, no loop. */
+.closing-cta {
+  position: relative;
+  overflow: hidden;
+  padding: 56px 48px;
+  background:
+    radial-gradient(90% 140% at 8% 0%, rgba(223,182,60,.10), rgba(223,182,60,0) 62%),
+    var(--vsx-panel);
+  border-color: var(--au-line);
+}
+.closing-cta .hero-light { animation: none; opacity: .8; }
+
+/* Mobile: once the order is non-empty, the total and the action follow the
+   visitor down the page. Desktop keeps the sticky panel instead. */
+.checkout-bar { display: none; }
+@media (max-width: 1023px) {
+  .checkout-bar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+    background: rgba(20,17,16,.82);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid var(--au-line);
+  }
+  .checkout-bar .btn { min-height: 48px; padding: 14px 26px; }
+  body { padding-bottom: 88px; }
+}
+
+@media (max-width: 767px) {
+  .closing-cta { padding: 36px 24px; }
 }
