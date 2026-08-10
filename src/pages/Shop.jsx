@@ -301,7 +301,9 @@ export default function Shop() {
   return (
     <>
       <Hero fromMonthly={fromMonthly} />
+      <TrackRecord />
       <Proof />
+      <SampleReport />
       <IncludedStrip freebies={cat.freebies} />
 
       <div className="shell cols-main" id="packs" style={{ paddingBottom: 120 }}>
@@ -481,6 +483,7 @@ export default function Shop() {
       </div>
 
       <HowItWorks />
+      <Testimonials />
       <FreeTier />
       <Faq />
       <ClosingCta />
@@ -1264,6 +1267,111 @@ function ClosingCta() {
               style={{ textDecoration: 'none', display: 'inline-block' }}>Join the Discord</a>
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ----------------------------------------------------------------------
+   Track record. Figures are taken verbatim from the Q2 2026 Quarterly
+   Performance Memorandum and are stated with the same qualifications the
+   memorandum itself carries: realised closed trades, proprietary capital,
+   one quarter. Update QUARTER and STATS when the next memorandum ships.
+   ---------------------------------------------------------------------- */
+const QUARTER = 'Q2 2026';
+const STATS = [
+  ['Win rate', '95%', '63 winners of 66 closed'],
+  ['Win / loss ratio', '2.05', '+13.8% avg win · −6.7% avg loss'],
+  ['Closed trades', '66', 'documented with entry and exit'],
+  ['Max drawdown', '−5.16%', 'realised plus float, base 100'],
+];
+
+function TrackRecord() {
+  return (
+    <section className="section" id="track-record" style={{ paddingBottom: 120 }}>
+      <RuleHead>Track record · {QUARTER}</RuleHead>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, margin: '20px 0 28px' }}>
+        <h2 style={{ fontSize: 'clamp(28px,3.4vw,44px)', margin: 0, maxWidth: '16ch' }}>
+          Every closed trade, published
+        </h2>
+        <p style={{ color: 'var(--tx-2)', fontSize: 14, maxWidth: '46ch', margin: 0 }}>
+          A hit rate without a sample size is marketing. These are the figures from the last Quarterly
+          Performance Memorandum, on our own capital, with the full trade log attached to it.
+        </p>
+      </div>
+      <div className="stat-band">
+        {STATS.map(([label, value, note]) => (
+          <motion.div key={label} className="stat"
+            initial={{ opacity: 0, y: 16, filter: 'blur(8px)' }} whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}>
+            <span className="eyebrow eyebrow-plain">{label}</span>
+            <span className="mono display stat-value">{value}</span>
+            <span style={{ color: 'var(--tx-3)', fontSize: 12 }}>{note}</span>
+          </motion.div>
+        ))}
+      </div>
+      <p style={{ color: 'var(--tx-3)', fontSize: 12, lineHeight: 1.6, margin: '18px 0 0', maxWidth: '80ch' }}>
+        Realised closed trades on proprietary capital for {QUARTER}, as reported in the Quarterly Performance
+        Memorandum. No client money is managed. Past performance is not indicative of future results.
+      </p>
+    </section>
+  );
+}
+
+/* Sample of the research that ships free with every pack. */
+function SampleReport() {
+  return (
+    <section className="section" style={{ paddingBottom: 120 }}>
+      <div className="card sample-report">
+        <div>
+          <RuleHead>Free in every pack</RuleHead>
+          <h2 style={{ fontSize: 'clamp(26px,3vw,38px)', margin: '20px 0 14px', maxWidth: '18ch' }}>
+            The macro report you would otherwise pay for
+          </h2>
+          <p style={{ color: 'var(--tx-2)', fontSize: 15, lineHeight: 1.65, maxWidth: '54ch', margin: '0 0 20px' }}>
+            Twenty pages on one question, with the sources named, the probabilities stated as judgements
+            rather than model output, and a section listing what would refute the thesis. Every pack
+            includes it. Nobody pays extra.
+          </p>
+          <div className="sample-meta">
+            <div><span className="eyebrow eyebrow-plain">Latest</span><span>The Realisation Thesis · Credit cycle</span></div>
+            <div><span className="eyebrow eyebrow-plain">Contains</span><span>Trigger watchlist with thresholds</span></div>
+            <div><span className="eyebrow eyebrow-plain">Also contains</span><span>What would refute this thesis</span></div>
+          </div>
+        </div>
+        <div className="sample-shots" aria-hidden>
+          <img src="/sample-report-inner.png" alt="" className="shot shot-back" loading="lazy" />
+          <img src="/sample-report-cover.png" alt="Cover of the VisionX special report" className="shot shot-front" loading="lazy" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* Quiet, static, attributed. No carousel, no autoplay, no stock portraits. */
+const QUOTES = [
+  ['The analytics provided are spot-on, offering valuable insights that have helped me improve my trading skills significantly over the past few months. The Q&A sessions were especially helpful and informative.', 'Chris', 'Member since 2024'],
+  ['I started out as a trader with all the necessary tools, but the engagement and support from the community elevated my trading journey to the next level. I have previously raised areas that could be improved with education content and risk management, and it was addressed and implemented.', 'NinetyNine', 'First paying member'],
+  ['Happy I listened to you. Despite all the noise, I had trust in your analysis. That is why I joined this group.', 'Tayo', 'Swing trader'],
+];
+
+function Testimonials() {
+  return (
+    <section className="section">
+      <RuleHead>From the community</RuleHead>
+      <div className="quote-grid">
+        {QUOTES.map(([text, name, role], i) => (
+          <motion.figure key={name} className="quote"
+            initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }} whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.6, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }}>
+            <blockquote>{text}</blockquote>
+            <figcaption>
+              <span style={{ color: 'var(--tx-1)' }}>{name}</span>
+              <span style={{ color: 'var(--tx-3)' }}> · {role}</span>
+            </figcaption>
+          </motion.figure>
+        ))}
       </div>
     </section>
   );
