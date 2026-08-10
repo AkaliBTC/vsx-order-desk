@@ -8,6 +8,24 @@ import { useCatalogue } from '../catalogue';
 import { postTicketEmbed } from '../lib';
 import { RUNTIMES, DISCLAIMERS, DISCLAIMER_PDF, runtimeByKey, fmt, coachBulkPercent, COACH_BULK_MIN } from '../data';
 
+// Optical price treatment. Takes the string fmt() already produced and
+// sets the currency symbol and the cents at 60%, so $22.00 reads as a
+// large confident 22 with quiet ornament around it. Display only — it
+// does not parse, round or alter any value.
+function Au({ value }) {
+  const m = /^([^\d]*)(\d[\d,]*)(\.\d+)?(.*)$/.exec(String(value));
+  if (!m) return <>{value}</>;
+  const [, sym, whole, cents, rest] = m;
+  return (
+    <>
+      {sym && <span className="au-sym">{sym}</span>}
+      {whole}
+      {cents && <span className="au-cent">{cents}</span>}
+      {rest}
+    </>
+  );
+}
+
 export default function Shop() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -353,8 +371,8 @@ export default function Shop() {
                 )}
               </div>
               <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                <div className="mono display" style={{ fontSize: 18, color: 'var(--vsx-gold)' }}>
-                  {fmt(s.price)}<span style={{ fontSize: 12, color: 'var(--vsx-muted)' }}>{s.unit || ''}</span>
+                <div className="mono display" style={{ fontSize: 30, lineHeight: 1, letterSpacing: '-.02em', color: 'var(--tx-1)' }}>
+                  <Au value={fmt(s.price)} /><span style={{ fontSize: 13, color: 'var(--tx-3)' }}>{s.unit || ''}</span>
                 </div>
                 <motion.button className="btn-ghost" whileTap={{ scale: 0.96 }} style={{ marginTop: 8 }} onClick={() => add({ kind: 'service', serviceId: s.id })}>Add</motion.button>
               </div>
@@ -368,7 +386,7 @@ export default function Shop() {
       </section>
 
       <aside>
-        <div className="card cart-aside" style={{ position: 'sticky', top: 24 }}>
+        <div className="card cart-aside" style={{ position: 'sticky', top: 96 }}>
           <p className="eyebrow">Cart</p>
           {lineItems.length === 0 && <p style={{ color: 'var(--vsx-muted)', fontSize: 14, marginTop: 14 }}>Empty. Add packages or services.</p>}
           <AnimatePresence initial={false}>
@@ -433,7 +451,7 @@ export default function Shop() {
                   <motion.span key={total} className="mono display"
                     initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-                    style={{ color: 'var(--vsx-gold)', fontSize: 18 }}>{fmt(total)}</motion.span>
+                    style={{ color: 'var(--au-primary)', fontSize: 28, lineHeight: 1, letterSpacing: '-.02em' }}><Au value={fmt(total)} /></motion.span>
                 </AnimatePresence>
               </div>
               <motion.button className="btn" whileTap={{ scale: 0.97 }} style={{ width: '100%', marginTop: 16 }} onClick={() => setConsentOpen(true)}>Open ticket</motion.button>
@@ -526,17 +544,18 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, cover
   const label = inCart ? 'In cart' : covered ? 'Included in Premium' : 'Add';
 
   return (
-    <motion.div className="card"
-      initial={{ opacity: 0, y: 26 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.55, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -6, transition: { type: 'spring', stiffness: 320, damping: 22 } }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 10, borderColor: pkg.highlight ? 'var(--vsx-gold-2)' : 'var(--vsx-line)', boxShadow: pkg.highlight ? 'var(--glow-gold)' : undefined, opacity: covered ? 0.6 : 1 }}>
+    <motion.div className={`card${pkg.highlight ? ' is-premium' : ''}`}
+      initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.6, delay: index * 0.05, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={{ y: -2, transition: { type: 'spring', stiffness: 320, damping: 26 } }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 12, opacity: covered ? 0.55 : 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <h3 style={{ fontSize: 19 }}>{pkg.name}</h3>
-        {pkg.highlight && <span className="tag gold">Premium</span>}
+        <h3 style={{ fontSize: 22, lineHeight: 1.15 }}>{pkg.name}</h3>
+        {pkg.highlight && <span className="tag gold">Everything we publish</span>}
       </div>
-      <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: 0, minHeight: 34 }}>{pkg.desc}</p>
+      <p style={{ color: 'var(--tx-2)', fontSize: 13, lineHeight: 1.55, margin: 0, minHeight: 62 }}>{pkg.desc}</p>
+      <span style={{ display: 'block', height: 1, background: 'var(--au-hairline)', margin: '6px 0' }} />
       <select value={rtKey} onChange={(e) => setRtKey(e.target.value)} disabled={disabled}>
         {RUNTIMES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
       </select>
@@ -544,15 +563,16 @@ function PackageCard({ pkg, index = 0, trackerPrice, allowTracker, inCart, cover
         <motion.div key={soon ? 'soon' : price} className="mono display"
           initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.25 }}
-          style={{ fontSize: 22, color: soon ? 'var(--vsx-muted)' : 'var(--vsx-gold)' }}>
-          {soon ? 'Coming soon' : fmt(price)}
+          style={{ fontSize: 34, lineHeight: 1, letterSpacing: '-.02em', color: soon ? 'var(--tx-3)' : 'var(--tx-1)' }}>
+          {soon ? <span style={{ fontSize: 20, color: 'var(--tx-3)' }}>Coming soon</span> : <Au value={fmt(price)} />}
         </motion.div>
       </AnimatePresence>
       <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {allowTracker && !inCart && !covered && (
-          <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: 'var(--vsx-muted)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} style={{ width: 16 }} />
-            + Portfolio Tracker ({fmt(trackerPrice)}/mo)
+          <label style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, color: tracker ? 'var(--tx-1)' : 'var(--tx-2)', cursor: 'pointer', padding: '12px 14px', borderRadius: 'var(--r-ctl)', background: 'var(--vsx-inset)', border: `1px solid ${tracker ? 'var(--au-line)' : 'var(--au-hairline)'}`, transition: 'border-color .35s, color .3s' }}>
+            <input type="checkbox" checked={tracker} onChange={(e) => setTracker(e.target.checked)} />
+            Portfolio Tracker · {fmt(trackerPrice)}/mo
+            <span className="mono" style={{ marginLeft: 'auto', fontSize: 10, letterSpacing: '.12em', color: tracker ? 'var(--au-primary)' : 'var(--tx-3)' }}>{tracker ? 'ON' : 'OFF'}</span>
           </label>
         )}
         <motion.button className="btn" disabled={disabled} whileTap={{ scale: 0.96 }}
@@ -735,7 +755,7 @@ function CoverageColumn({ eyebrow, title, items }) {
   return (
     <div className="card" style={{ background: 'var(--vsx-charcoal-3)', display: 'grid', gap: 0, alignContent: 'start', height: '100%' }}>
       <p className="eyebrow" style={{ margin: '0 0 6px' }}>{eyebrow}</p>
-      <h3 className="display" style={{ fontSize: 26, margin: '0 0 12px', letterSpacing: 0.5 }}>{title}</h3>
+      <h3 className="display" style={{ fontSize: 24, margin: '0 0 10px', letterSpacing: 0.5 }}>{title}</h3>
       {items.map(([name, sub], i) => (
         <div key={name} style={{ display: 'flex', gap: 10, padding: '11px 0', borderTop: i === 0 ? 'none' : '1px solid var(--vsx-line)' }}>
           <span style={{ color: 'var(--vsx-gold)', fontSize: 12, lineHeight: '20px' }}>◆</span>
@@ -754,23 +774,23 @@ function DeepDiveInfo({ onClose }) {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto', zIndex: 60 }}>
       <motion.div className="card" onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 760, width: '100%', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', margin: 'auto', borderColor: 'var(--vsx-gold-2)' }}
+        style={{ maxWidth: 520, width: '100%', maxHeight: 'calc(100vh - 40px)', overflowY: 'auto', margin: 'auto', borderColor: 'var(--vsx-gold-2)' }}
         initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }}
         transition={{ type: 'spring', stiffness: 280, damping: 26 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <p className="eyebrow" style={{ margin: 0 }}>VisionX Market Analytics</p>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--vsx-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
         </div>
-        <h2 className="display" style={{ fontSize: 46, lineHeight: 1, margin: '6px 0 6px',
-          background: 'linear-gradient(180deg, #F5D87A 0%, #D4AF37 55%, #B99C64 100%)',
+        <h2 className="display" style={{ fontSize: 42, lineHeight: 1, margin: '6px 0 6px',
+          background: 'linear-gradient(180deg, #F0DFA6 0%, #D4AF37 55%, #C9A24B 100%)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
           DEEP DIVES
         </h2>
-        <p style={{ fontSize: 15, margin: '0 0 20px' }}>
+        <p style={{ fontSize: 14, margin: '0 0 20px' }}>
           One asset. Every angle. <span style={{ color: 'var(--vsx-gold-2)' }}>Institutional-grade market reports.</span>
         </p>
 
-        <div className="cols-2" style={{ alignItems: 'stretch' }}>
+        <div className="stack">
           <CoverageColumn eyebrow="Technical Analysis" title="TA Coverage" items={DD_TA} />
           <CoverageColumn eyebrow="Fundamental Analysis" title="FA Coverage" items={DD_FA} />
         </div>
@@ -837,7 +857,7 @@ function CoachingInfo({ coach, onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--vsx-muted)', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
         </div>
         <h2 className="display" style={{ fontSize: 42, lineHeight: 1, margin: '6px 0 6px',
-          background: 'linear-gradient(180deg, #F5D87A 0%, #D4AF37 55%, #B99C64 100%)',
+          background: 'linear-gradient(180deg, #F0DFA6 0%, #D4AF37 55%, #C9A24B 100%)',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
           COACHING
         </h2>
