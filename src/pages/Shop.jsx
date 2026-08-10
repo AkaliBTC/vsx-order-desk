@@ -288,18 +288,31 @@ export default function Shop() {
     (p) => p.tracker && p.id !== 'premium' && !buyingIds.has(p.id) && (ownsPremium || owns.includes(p.id)),
   );
 
-  return (
-    <div className="shell cols-main">
-      <section>
-        <p className="eyebrow rise">Catalog</p>
-        <h1 className="rise" style={{ fontSize: 32, margin: '8px 0 14px', animationDelay: '.06s' }}>Analysis Packages</h1>
+  // Lowest effective monthly rate across the catalogue. Read-only: it drives
+  // the headline copy so the page can never quote a price the shop doesn't
+  // actually offer.
+  const fromMonthly = (() => {
+    const rates = cat.packages
+      .filter((p) => p.id !== 'premium')
+      .flatMap((p) => RUNTIMES
+        .filter((r) => p.prices[r.key] != null && p.prices[r.key] !== '')
+        .map((r) => Number(p.prices[r.key]) / r.months));
+    return rates.length ? Math.min(...rates) : null;
+  })();
 
-        <motion.div className="card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-          style={{ padding: '14px 18px', marginBottom: 22, borderColor: 'var(--vsx-gold-2)' }}>
-          <p className="eyebrow" style={{ marginBottom: 8 }}>Included free</p>
-          {cat.freebies.map((f, i) => <div key={i} style={{ fontSize: 14 }}>★ {f}</div>)}
-        </motion.div>
+  return (
+    <>
+      <Hero fromMonthly={fromMonthly} />
+      <IncludedStrip freebies={cat.freebies} />
+
+      <div className="shell cols-main" id="packs" style={{ paddingBottom: 120 }}>
+      <section>
+        <div className="rule-head"><p className="eyebrow">Subscriptions</p></div>
+        <h1 style={{ fontSize: 'clamp(32px,4vw,52px)', margin: '20px 0 10px' }}>Choose your coverage</h1>
+        <p style={{ color: 'var(--tx-2)', fontSize: 14, maxWidth: '52ch', margin: '0 0 32px' }}>
+          Pick the markets you actually trade. Longer terms cost less per month, and every pack ships
+          the macro and practice channels.
+        </p>
 
         <div className="cols-2">
           {cat.packages.map((p, i) => (
@@ -313,9 +326,9 @@ export default function Shop() {
 
         {ownedTrackable.length > 0 && (
           <>
-            <p className="eyebrow" style={{ marginTop: 30 }}>Portfolio Tracker</p>
-            <h2 style={{ fontSize: 22, margin: '6px 0 6px' }}>Add Portfolio Tracker</h2>
-            <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '0 0 14px' }}>
+            <div className="rule-head" style={{ marginTop: 56 }}><p className="eyebrow">Portfolio Tracker</p></div>
+            <h2 style={{ fontSize: 30, margin: '16px 0 8px' }}>Add Portfolio Tracker</h2>
+            <p style={{ color: 'var(--tx-2)', fontSize: 13, margin: '0 0 18px', maxWidth: '62ch' }}>
               Add a tracker for any package individually — {fmt(cat.tracker.perPackage)}/mo each.
               Or pick Premium+ below for every tracker at once (selecting it clears the individual ones).
             </p>
@@ -336,8 +349,9 @@ export default function Shop() {
             used={trialUsed} busy={trialBusy} msg={trialMsg} onStart={startTrial} />
         )}
 
-        <p className="eyebrow" style={{ marginTop: 30 }}>Services</p>
-        <p style={{ color: 'var(--vsx-muted)', fontSize: 13, margin: '0 0 14px' }}>
+        <div className="rule-head" style={{ marginTop: 56 }}><p className="eyebrow">Services</p></div>
+        <h2 style={{ fontSize: 30, margin: '16px 0 10px' }}>Deep Dives & Coaching</h2>
+        <p style={{ color: 'var(--tx-2)', fontSize: 13, margin: '0 0 20px', maxWidth: '62ch' }}>
           {coachCount >= COACH_BULK_MIN ? (
             <>Coaching bulk discount active: <span style={{ color: 'var(--vsx-gold)' }}>−{coachPct.toFixed(2)}%</span> on
               {' '}{coachCount} sessions. Add one more for −{coachBulkPercent(coachCount + 1).toFixed(2)}%.</>
@@ -346,7 +360,6 @@ export default function Shop() {
               discount — all coaches count together, up to −10%.</>
           )}
         </p>
-        <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Deep Dives & Coaching</h2>
         <div className="cols-2">
           {cat.services.map((s, i) => (
             <motion.div key={s.id} className="card"
@@ -380,8 +393,8 @@ export default function Shop() {
           ))}
         </div>
 
-        <p className="eyebrow" style={{ marginTop: 30 }}>Gift</p>
-        <h2 style={{ fontSize: 24, margin: '6px 0 14px' }}>Gift Voucher</h2>
+        <div className="rule-head" style={{ marginTop: 56 }}><p className="eyebrow">Gift</p></div>
+        <h2 style={{ fontSize: 30, margin: '16px 0 16px' }}>Gift Voucher</h2>
         <GiftVoucherCard onAdd={add} />
       </section>
 
@@ -459,6 +472,11 @@ export default function Shop() {
           )}
         </div>
       </aside>
+      </div>
+
+      <FreeTier />
+      <Faq />
+      <SiteFooter />
 
       <AnimatePresence>
         {consentOpen && (
@@ -531,7 +549,7 @@ export default function Shop() {
       <AnimatePresence>
         {coachOpen && <CoachingInfo coach={coachOpen} onClose={() => setCoachOpen(null)} />}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
 
@@ -901,5 +919,239 @@ function CoachingInfo({ coach, onClose }) {
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+/* ======================================================================
+   Sales page — presentational only. None of the components below read or
+   write basket state, pricing or entitlements.
+   ====================================================================== */
+
+function RuleHead({ children }) {
+  return <div className="rule-head"><p className="eyebrow">{children}</p></div>;
+}
+
+// The right-hand hero panel. An abstract sequence, not a live chart and not
+// a dashboard mock-up: hollow gold up-candles, dark down-candles, drawn once.
+const CANDLES = [
+  [64, 30, 0], [58, 24, 1], [61, 34, 0], [52, 20, 1], [56, 26, 1], [44, 18, 0],
+  [48, 30, 0], [40, 22, 1], [46, 26, 0], [34, 16, 1], [38, 24, 1], [28, 14, 0],
+  [33, 22, 0], [24, 12, 1], [29, 20, 0], [20, 30, 0], [26, 40, 0], [18, 26, 0],
+];
+
+function HeroSequence() {
+  return (
+    <div className="card" style={{ position: 'relative', minHeight: 460, padding: 28, overflow: 'hidden' }}>
+      <p className="eyebrow eyebrow-plain" style={{ margin: 0 }}>Sequence</p>
+      <motion.svg viewBox="0 0 420 300" width="100%" height="330" aria-hidden
+        style={{ display: 'block', marginTop: 24 }}
+        initial={{ clipPath: 'inset(0 100% 0 0)' }}
+        animate={{ clipPath: 'inset(0 0% 0 0)' }}
+        transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1] }}>
+        {CANDLES.map(([y, h, up], i) => {
+          const x = 12 + i * 22;
+          return (
+            <g key={i}>
+              <line x1={x + 6} y1={y * 3 - 18} x2={x + 6} y2={y * 3 + h * 3 + 18}
+                stroke={up ? 'var(--au-primary)' : '#2A2A2E'} strokeWidth="1" />
+              <rect x={x} y={y * 3} width="12" height={h * 3}
+                fill={up ? 'none' : 'var(--vsx-panel-hi)'}
+                stroke={up ? 'var(--au-primary)' : '#2A2A2E'} strokeWidth="1" />
+            </g>
+          );
+        })}
+      </motion.svg>
+      <span className="mono" style={{ position: 'absolute', bottom: 22, left: 28, right: 28, fontSize: 11, letterSpacing: '.06em', color: 'var(--tx-3)' }}>
+        PUBLISHED BEFORE THE MOVE
+      </span>
+    </div>
+  );
+}
+
+function Hero({ fromMonthly }) {
+  const scrollTo = (id) => () => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <section className="hero-section" style={{ position: 'relative', maxWidth: 1280, margin: '0 auto', padding: '0 40px 120px' }}>
+      <div aria-hidden className="hero-light"
+        style={{ position: 'absolute', left: '2%', top: '6%', width: 620, height: 420, pointerEvents: 'none' }} />
+      <div className="hero-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,7fr) minmax(0,5fr)', gap: 28, alignItems: 'center' }}>
+        <div style={{ position: 'relative', padding: '72px 0' }}>
+          <RuleHead>Independent market analysis house</RuleHead>
+          <h1 style={{ fontSize: 'clamp(40px,7vw,88px)', lineHeight: 0.92, letterSpacing: '-.025em', margin: '32px 0 0' }}>
+            <motion.span style={{ display: 'block' }}
+              initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.7, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}>We called</motion.span>
+            <motion.span style={{ display: 'block' }}
+              initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.7, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}>the Nikkei crash.</motion.span>
+            <motion.span style={{ display: 'block', color: 'var(--tx-2)' }}
+              initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ duration: 0.7, delay: 0.23, ease: [0.16, 1, 0.3, 1] }}>People still got liquidated.</motion.span>
+          </h1>
+          <motion.p style={{ maxWidth: '62ch', margin: '30px 0 0', fontSize: 15, lineHeight: 1.65, color: 'var(--tx-2)' }}
+            initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            transition={{ duration: 0.7, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}>
+            August 2024. We saw the move and published it. Watching people get wiped out anyway is why
+            VisionX exists. We trade our own capital, no client money and no external investors, and we
+            publish the analysis, the research and the reasoning behind it.
+          </motion.p>
+          <motion.div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 34 }}
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+            <button className="btn" onClick={scrollTo('packs')}>See the packs</button>
+            <button className="btn-ghost" onClick={scrollTo('free')}>Watch us for free</button>
+          </motion.div>
+          <div className="hero-facts">
+            <span>{fromMonthly != null ? `From ${fmt(fromMonthly)} / month` : 'Transparent pricing'}</span>
+            <span>Own capital only</span>
+            <span>Published track record</span>
+          </div>
+        </div>
+        <div className="hide-sm" style={{ position: 'relative' }}>
+          <HeroSequence />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function IncludedStrip({ freebies }) {
+  return (
+    <section className="section" style={{ paddingBottom: 120 }}>
+      <div className="card card-inset" style={{ padding: '34px 40px', display: 'grid', gridTemplateColumns: 'minmax(180px,240px) 1fr', gap: 40, alignItems: 'center' }}>
+        <RuleHead>Included in every pack</RuleHead>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 24 }}>
+          {freebies.map((f, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <span style={{ marginTop: 8, width: 7, height: 7, background: 'var(--au-primary)', transform: 'rotate(45deg)', flex: 'none' }} />
+              <span style={{ fontSize: 14, lineHeight: 1.55 }}>{f}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FreeTier() {
+  const rows = [
+    'One full analysis every week.',
+    'The public portfolio view.',
+    'The community.',
+  ];
+  return (
+    <section className="section" id="free">
+      <div className="card card-inset" style={{ padding: '44px 40px' }}>
+        <RuleHead>No subscription required</RuleHead>
+        <h2 style={{ fontSize: 30, margin: '18px 0 24px' }}>Watch us first</h2>
+        <div style={{ maxWidth: '62ch' }}>
+          {rows.map((r, i) => (
+            <div key={r} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', borderTop: i === 0 ? 'none' : '1px solid var(--au-hairline)' }}>
+              <span style={{ width: 7, height: 7, background: 'var(--au-primary)', transform: 'rotate(45deg)', flex: 'none' }} />
+              <span style={{ fontSize: 15 }}>{r}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{ color: 'var(--tx-2)', fontSize: 15, maxWidth: '62ch', margin: '20px 0 26px' }}>
+          We'd rather convince you with the product than with a sales pitch.
+        </p>
+        <a className="btn-ghost" href="https://discord.gg/" target="_blank" rel="noreferrer"
+          style={{ display: 'inline-block', textDecoration: 'none' }}>Join the Discord</a>
+      </div>
+    </section>
+  );
+}
+
+const FAQ_ITEMS = [
+  ['What is VisionX?',
+    'An independent market analysis house. We trade our own capital, no client money and no external investors, and we share our analysis, research and education with the community. We started after the Nikkei crash in August 2024: we predicted the move, but watched too many people get liquidated anyway. VisionX exists so that does not happen to you.'],
+  ['If you want to help people, why are subscriptions paid?',
+    'Because we do not live from your subscription, we live from our trading. The packs cover the operational cost of running this at a professional level: infrastructure, research time, reporting. That is also why our prices sit far below what comparable services charge. We are not optimising for subscription revenue.'],
+  ['How do I know your analysis is actually good?',
+    'You do not have to take our word for it. Our track record channel documents closed trades in full, with entries and exits, and the Quarterly Performance Memorandum reports the rest. We always publish hit rate together with sample size and average risk/reward, because a hit rate on its own means nothing.'],
+  ['Are your analyses trading signals?',
+    'No. We document our own trading and explain our reasoning so you learn how we think. Nothing we publish is investment advice or a recommendation to copy. See our disclaimer.'],
+  ['How often do you post updates?',
+    'It depends on the asset volatility. Crypto every weekday, Stocks twice a week, Commodities and Indices when market conditions actually change. We do not post noise to look busy.'],
+  ['What is included in the packs?',
+    'Every subscriber gets the macro economy channel and the practice channel. Crypto, Stocks and Premium also include the educational channel. The full overview lives in our products channel.'],
+  ['How do I subscribe?',
+    'Add what you want to your order and check out with PayPal or USDT (TRC20). You can also open a ticket in Discord and our team will set you up. No refunds on delivered analysis periods.'],
+  ['What do I get for free?',
+    'One full analysis every week, the public portfolio view, and the community. We would rather convince you with the product than with a sales pitch.'],
+];
+
+function Faq() {
+  const [open, setOpen] = useState(null);
+  return (
+    <section className="section" id="faq">
+      <div className="faq">
+        <RuleHead>Questions</RuleHead>
+        <h2 style={{ fontSize: 30, margin: '18px 0 28px' }}>FAQ</h2>
+        {FAQ_ITEMS.map(([q, a], i) => (
+          <div key={q} className={`faq-item${open === i ? ' open' : ''}`}>
+            <button className="faq-q" aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)}>
+              <span>{q}</span>
+              <span className="faq-mark" aria-hidden>+</span>
+            </button>
+            <AnimatePresence initial={false}>
+              {open === i && (
+                <motion.div key="a" style={{ overflow: 'hidden' }}
+                  initial={{ height: 0, opacity: 0, filter: 'blur(8px)' }}
+                  animate={{ height: 'auto', opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ height: 0, opacity: 0, filter: 'blur(8px)' }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 32 }}>
+                  <p className="faq-a">{a}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <div className="footer-grid">
+        <div className="footer-col">
+          <span className="display wordmark" style={{ fontSize: 22 }}>VISIONX</span>
+          <p style={{ color: 'var(--tx-2)', fontSize: 14, maxWidth: '34ch', margin: '12px 0 0' }}>
+            Independent market analysis house. We trade our own capital and publish the reasoning.
+          </p>
+        </div>
+        <div className="footer-col">
+          <h4>Products</h4>
+          <a href="#packs">Analysis packs</a>
+          <a href="#packs">Portfolio Tracker</a>
+          <a href="#packs">Deep Dives &amp; Coaching</a>
+        </div>
+        <div className="footer-col">
+          <h4>Community</h4>
+          <a href="https://discord.gg/" target="_blank" rel="noreferrer">Discord</a>
+          <a href="#free">Free analysis</a>
+          <a href="#free">Track record</a>
+        </div>
+        <div className="footer-col">
+          <h4>Legal</h4>
+          <a href={DISCLAIMER_PDF.analysis} target="_blank" rel="noreferrer">Risk disclosure</a>
+          <a href={DISCLAIMER_PDF.deepdive} target="_blank" rel="noreferrer">Deep Dive terms</a>
+          <a href={DISCLAIMER_PDF.tracker} target="_blank" rel="noreferrer">Tracker terms</a>
+          <a href={DISCLAIMER_PDF.coaching} target="_blank" rel="noreferrer">Coaching terms</a>
+        </div>
+      </div>
+      <div className="footer-bar">
+        <div>
+          VisionX Market Analytics provides educational and analytical content only. Nothing published
+          constitutes investment advice, a personal recommendation, or an offer to buy or sell any
+          financial instrument. Trading involves substantial risk of loss.
+        </div>
+      </div>
+    </footer>
   );
 }
