@@ -8,14 +8,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600;700&family=Poppins:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* The dark room. Warm charcoal, not neutral grey — the whole room is
-     lit by a gold source, so the surfaces carry that temperature. ---- */
-  --vsx-void:     #0B0908;
-  --vsx-base:     #141110;
-  --vsx-panel:    #1B1715;
-  --vsx-panel-hi: #241F1B;
-  --vsx-inset:    #100D0C;
-  --vsx-premium:  #241A08;
+  /* The dark room. Neutral charcoal per the VisionX brand spec — all the
+     warmth on screen comes from the gold, never from the surfaces. The one
+     exception is the Premium panel, which is polished gold as a material. */
+  --vsx-void:     #0A0A0A;
+  --vsx-base:     #121212;
+  --vsx-panel:    #191919;
+  --vsx-panel-hi: #212121;
+  --vsx-inset:    #0E0E0E;
+  --vsx-premium:  #1E1806;
 
   /* Gold as a metal — a ramp, never a two-stop fill ----------------- */
   --au-shadow:   #7B5F16;
@@ -39,9 +40,9 @@
      as cheap plastic. */
   /* Higher contrast across the board — the secondary and meta greys were
      sitting too close to the panel value to carry small type. */
-  --tx-1: #FCF8F1;
-  --tx-2: #BDB4A6;
-  --tx-3: #8B8175;
+  --tx-1: #FAFAFA;
+  --tx-2: #B2B2B2;
+  --tx-3: #808080;
 
   --vsx-ok:   #63C892;
   --vsx-warn: var(--au-core);
@@ -97,7 +98,7 @@ body {
      the edges. */
   background:
     radial-gradient(90% 55% at 50% -6%, rgba(223,182,60,.055), rgba(223,182,60,0) 70%),
-    radial-gradient(120% 80% at 50% 0%, var(--vsx-base) 0%, #100D0C 45%, var(--vsx-void) 100%);
+    radial-gradient(120% 80% at 50% 0%, var(--vsx-base) 0%, #0F0F0F 45%, var(--vsx-void) 100%);
   background-attachment: fixed;
   min-height: 100vh;
 }
@@ -115,7 +116,7 @@ body::after {
   background-size: 160px 160px;
 }
 
-::selection { background: rgba(223,182,60,.28); color: #141110; }
+::selection { background: rgba(223,182,60,.28); color: #0A0A0A; }
 
 /* Type ------------------------------------------------------------------ */
 h1,h2,h3,.display {
@@ -274,7 +275,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   border-color: var(--au-line);
   animation: vsxSweep 9s linear infinite;
 }
-.card.is-premium:hover { background-color: #201A0A; }
+.card.is-premium:hover { background-color: #262008; }
 @keyframes vsxSweep {
   0%   { background-position: -140px 0; }
   10%  { background-position: 150% 0; }
@@ -420,7 +421,7 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
   justify-content: space-between;
   gap: 12px;
   padding: 18px 40px;
-  background: rgba(20,17,16,.74);
+  background: rgba(18,18,18,.74);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--au-hairline);
@@ -614,7 +615,7 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
     justify-content: space-between;
     gap: 16px;
     padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
-    background: rgba(20,17,16,.82);
+    background: rgba(18,18,18,.82);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-top: 1px solid var(--au-line);
