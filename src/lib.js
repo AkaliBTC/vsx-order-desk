@@ -15,6 +15,20 @@ export async function postPayHint({ id, userTag, method, amount, paid }) {
     return { ok: r.ok && data.ok === true, status: r.status, error: data.error, detail: data.detail };
   } catch (e) { return { ok: false, error: e.message }; }
 }
+// Customer-triggered @here in the staff channel. Rate limited server-side
+// (one ping per ticket per 10 minutes) — the endpoint tells us if we are
+// inside that window so the UI can say so instead of failing silently.
+export async function postSupportPing(ticketId) {
+  try {
+    const r = await fetch('/api/support-ping', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketId }),
+    });
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok && data.ok === true, status: r.status, error: data.error, retryInMs: data.retryInMs };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
 const USDT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 
 export async function postTicketEmbed(ticket) {
