@@ -175,6 +175,8 @@ function AdminDetail({ ticket, modTag, user }) {
           vouchers,
           referralCode: ticket.referralCode || '',
           balanceUsed: Number(ticket.balanceUsed) || 0,
+          total: typeof ticket.total === 'number' ? ticket.total : null,
+          method: ticket.payment?.method || '',
         }),
       });
       const d = await r.json();
@@ -188,6 +190,7 @@ function AdminDetail({ ticket, modTag, user }) {
       if (d.voucherDmFailed) lines.push('⚠ Could not DM the voucher (buyer may have DMs closed) — codes: ' + vouchers.map((v) => v.code).join(', '));
       if (d.referral?.rewarded) lines.push(`Referral: owner credited ${fmt(d.referral.credit || 5)} (use #${d.referral.uses})`);
       if (d.balanceDeducted > 0) lines.push(`Balance used: ${fmt(d.balanceDeducted)}`);
+      if (d.archived && !d.archived.ok) lines.push('⚠ Not archived to Discord (' + (d.archived.error || 'unknown') + ') — the roles were still granted');
       if (d.failed?.length) lines.push('Roles failed: ' + d.failed.join(', '));
       if (d.channelErrors?.length) lines.push('Channels failed: ' + d.channelErrors.join(', '));
       if (lines.length) alert(lines.join('\n'));

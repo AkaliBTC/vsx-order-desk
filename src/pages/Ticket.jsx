@@ -7,7 +7,7 @@ import {
 import { db, auth } from '../firebase';
 import { useAuth } from '../auth';
 import { PAYMENT, fmt } from '../data';
-import { postProofImage, postPayHint } from '../lib';
+import { postProofImage, postPayHint, postSupportPing } from '../lib';
 
 export default function Ticket() {
   const { id } = useParams();
@@ -166,6 +166,18 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
   const amount = ticket.total;   // send exactly the total — overpaying is fine, we verify the tx
   const reported = !!p.markedPaidAt || submitting;
 
+  // Support ping. The endpoint enforces the real cooldown; this state only
+  // reflects the outcome so the customer is never left guessing.
+  const [supportState, setSupportState] = useState('idle'); // idle | sending | sent | wait | error
+  const requestSupport = async () => {
+    if (supportState === 'sending' || supportState === 'sent') return;
+    setSupportState('sending');
+    const r = await postSupportPing(ticket.id);
+    if (r.ok) setSupportState('sent');
+    else if (r.status === 429) setSupportState('wait');
+    else setSupportState('error');
+  };
+
   const verifyTx = async () => {
     const hash = txId.trim();
     if (!hash) { setVerifyErr('Paste your transaction ID.'); return; }
@@ -264,6 +276,36 @@ function PaymentInstructions({ ticket, onChangeMethod }) {
           {uploading ? 'Sending…' : cooldown > 0 ? `I've paid (${cooldown}s)` : "I've paid"}
         </button>
       ))}
+
+      <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--au-hairline)' }}>
+        {supportState === 'sent' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--vsx-ok)' }}>
+            <span style={{ fontSize: 16 }}>✓</span>
+            <span>The team has been notified and will open this ticket shortly.</span>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              <p style={{ color: 'var(--tx-2)', fontSize: 13, margin: 0, maxWidth: '46ch' }}>
+                Something not adding up? Ping the team and someone will look at this ticket.
+              </p>
+              <button className="btn-ghost" onClick={requestSupport} disabled={supportState === 'sending'}>
+                {supportState === 'sending' ? 'Notifying…' : 'Contact support'}
+              </button>
+            </div>
+            {supportState === 'wait' && (
+              <p style={{ color: 'var(--tx-3)', fontSize: 12, margin: '10px 0 0' }}>
+                The team was already notified about this ticket a moment ago. Write below and they will see it.
+              </p>
+            )}
+            {supportState === 'error' && (
+              <p style={{ color: 'var(--vsx-err)', fontSize: 12, margin: '10px 0 0' }}>
+                Could not reach the team right now. Please write a message below instead.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
