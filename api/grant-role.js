@@ -18,6 +18,57 @@ const GUILD = () => process.env.DISCORD_GUILD_ID;
 const BOT = () => `Bot ${process.env.DISCORD_BOT_TOKEN}`;
 const VIEW = 1024; // VIEW_CHANNEL permission bit
 
+// Permanent purchase record, posted the moment a ticket is fulfilled.
+// Server-side on purpose: the customer's browser is gone by the time a TRC20
+// payment auto-confirms, so the client-side transcript webhook would never run.
+// Best effort throughout — a failed archive post must never cost someone the
+// roles they just paid for.
+const ARCHIVE_WEBHOOK = () =>
+  process.env.DISCORD_ARCHIVE_WEBHOOK || process.env.VITE_WEBHOOK_ARCHIVE || '';
+
+async function postPurchaseRecord({ ticketId, userId, userTag, grants, services, vouchers, granted, expiries, total, method, balanceUsed, referralCode }) {
+  const hook = ARCHIVE_WEBHOOK();
+  if (!hook) return { ok: false, error: 'no archive webhook set' };
+
+  const money = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : '—');
+  const bought = [
+    ...grants.map((g) => `${g.label}${g.months ? ` · ${g.months} mo` : ''}`),
+    ...services.map((sv) => (typeof sv === 'string' ? sv : sv.name)),
+    ...vouchers.map((v) => `Voucher ${typeof v === 'string' ? v : v.code || ''}`.trim()),
+  ].filter(Boolean);
+
+  const fields = [
+    { name: 'Customer', value: `${userTag || '—'}\n\`${userId}\``, inline: true },
+    { name: 'Ticket', value: `\`#${String(ticketId || '').slice(0, 6)}\``, inline: true },
+    { name: 'Total', value: `${money(total)}${balanceUsed ? ` (incl. ${money(balanceUsed)} balance)` : ''}`, inline: true },
+    { name: 'Items', value: bought.length ? bought.map((b) => `• ${b}`).join('\n') : '—' },
+  ];
+  if (granted.length) fields.push({ name: 'Roles granted', value: granted.join(', ') });
+  if (expiries.length) fields.push({ name: 'Runs until', value: expiries.join('\n') });
+  if (referralCode) fields.push({ name: 'Referral', value: String(referralCode), inline: true });
+
+  try {
+    const r = await fetch(hook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        embeds: [{
+          title: `Purchase completed · #${String(ticketId || '').slice(0, 6)}`,
+          color: 0xdfb63c,
+          description: `Payment method: **${method === 'trc20' ? 'USDT · TRC20' : method === 'paypal' ? 'PayPal' : (method || '—')}**`,
+          fields,
+          footer: { text: 'VisionX Order Desk · automatic archive' },
+          timestamp: new Date().toISOString(),
+        }],
+      }),
+    });
+    if (!r.ok) return { ok: false, error: `webhook ${r.status}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 function chanName(s) {
   const n = (s || 'ticket').toLowerCase().normalize('NFKD')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90);
@@ -177,7 +228,7 @@ async function upsertEntitlement(db, { userId, userTag, roleId, label, durationM
 
 // Core fulfillment — grant roles, create channels, create+DM vouchers, referral,
 // balance. Reusable by the mod endpoint (below) AND the self-checkout (api/me.js).
-export async function fulfilTicket({ ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '', balanceUsed = 0 }) {
+export async function fulfilTicket({ ticketId, userId, userTag, grants = [], services = [], vouchers = [], referralCode = '', balanceUsed = 0, total = null, method = '' }) {
   const granted = [];
   const failed = [];
     const channels = [];
@@ -309,7 +360,26 @@ export async function fulfilTicket({ ticketId, userId, userTag, grants = [], ser
     const referral = await processReferral(getAdmin().firestore(), referralCode, userId);
     const balanceDeducted = await deductBalance(getAdmin().firestore(), userId, balanceUsed);
 
-  return { granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral, balanceDeducted };
+    // Permanent record of the completed transaction. Runs last so nothing above
+    // can be affected by it, and never throws.
+    let archived = { ok: false, error: 'not attempted' };
+    try {
+      archived = await postPurchaseRecord({
+        ticketId, userId, userTag, grants, services, vouchers,
+        granted, expiries, total, method, balanceUsed, referralCode,
+      });
+      await getAdmin().firestore().collection('tickets').doc(String(ticketId)).set({
+        archive: {
+          postedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ok: archived.ok,
+          error: archived.ok ? null : String(archived.error || '').slice(0, 200),
+        },
+      }, { merge: true });
+    } catch (e) {
+      archived = { ok: false, error: e.message };
+    }
+
+  return { granted, failed, channels, channelErrors, expiryWarning, expiries, voucherDmFailed, referral, balanceDeducted, archived };
 }
 
 export default async function handler(req, res) {

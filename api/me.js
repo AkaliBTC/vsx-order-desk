@@ -287,6 +287,8 @@ async function actionVerifyTx(req, decoded, res) {
       ticketId, userId: ticket.userId, userTag: ticket.userTag,
       grants: ticket.grants || [], services: ticket.services || [], vouchers,
       referralCode: ticket.referralCode || '', balanceUsed: Number(ticket.balanceUsed) || 0,
+      total: typeof ticket.total === 'number' ? ticket.total : null,
+      method: ticket.payment?.method || 'trc20',
     });
   } catch (e) { result = { error: e.message }; }
 
